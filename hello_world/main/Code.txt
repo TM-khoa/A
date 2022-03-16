@@ -1,0 +1,224 @@
+************************************************************************************************************
+static xQueueHandle xQueue1 = NULL, xQueue2 = NULL;
+static xQueueSetHandle xQueueSet = NULL;
+void vSenderTask1(void *vParameter)
+{
+    const TickType_t xBlockTime = pdMS_TO_TICKS(100);
+    const char* const pcMessage = "Message from vSenderTask1 \r\n";
+    for(;;){
+        vTaskDelay(xBlockTime);
+        xQueueSend(xQueue1, &pcMessage, 0);
+    }
+}
+void vSenderTask2(void *vParameter)
+{
+    const TickType_t xBlockTime = pdMS_TO_TICKS(200);
+    const char* const pcMessage = "Message from vSenderTask2 \r\n";
+    for(;;){
+        vTaskDelay(xBlockTime);
+        xQueueSend(xQueue2, &pcMessage, 0);
+    }
+}
+void vReceiverTask(void *vParameter)
+{
+    QueueHandle_t xQueueThatContainData;
+    char *pcReceivedString;
+    for(;;)
+    {
+        xQueueThatContainData = (QueueHandle_t) xQueueSelectFromSet(xQueueSet,portMAX_DELAY);
+        xQueueReceive(xQueueThatContainData,&pcReceivedString,0);
+        // printf("%s",pcReceivedString);
+    }
+}
+void app_main(void)
+{
+    xQueue1 = xQueueCreate(1, sizeof(char *));
+    xQueue2 = xQueueCreate(1, sizeof(char *));
+    xQueueSet = xQueueCreateSet(1*2);
+    xQueueAddToSet(xQueue1,xQueueSet);
+    xQueueAddToSet(xQueue2,xQueueSet);
+
+    xTaskCreate(vSenderTask1,"Sender1",1000,NULL,1,NULL);
+    xTaskCreate(vSenderTask2,"Sender2",1000,NULL,1,NULL);
+    xTaskCreate(vReceiverTask,"Receiver",1000,NULL,2,NULL);
+    vTaskStartScheduler();
+    for( ;; );
+}
+************************************************************************************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+************************************************************************************************************
+QueueHandle_t q=NULL;
+
+void consumer_task(void *pvParameter)
+{
+    unsigned long counter;
+    if(q==NULL){
+        printf("Queue is not ready \n");
+        return;
+    }
+    while(1){
+        xQueueReceive(q,&counter,(TickType_t)(1000/portTICK_PERIOD_MS));
+        printf("value received on queue: %lu \n",counter);
+        vTaskDelay(500/portTICK_PERIOD_MS);
+    }
+}
+
+void producer_task(void *pvParameter){
+    unsigned long counter=1;
+    if(q==NULL){
+        printf("Queue is not ready \n");
+        return;
+    }
+    while(1){
+        printf("value sent on queue %lu \n",counter);
+        xQueueSend(q,(void *)&counter,(TickType_t)0);
+        counter++;
+        vTaskDelay(1000/portTICK_PERIOD_MS);
+    }
+}
+void app_main(void)
+{
+    q = xQueueCreate(20,sizeof(unsigned long));
+    if(q != NULL){
+        printf("Queue is created \n");
+        vTaskDelay(1000/portTICK_PERIOD_MS);
+        xTaskCreate(&producer_task,"producer task",2048,NULL,5,NULL);
+        printf("producer task started \n");
+        xTaskCreate(&consumer_task,"consumer_task",2048,NULL,5,NULL);
+        printf("consumer task started \n");
+    }
+    else{
+        printf("Queue creation failed \n");
+    }
+}
+************************************************************************************************************
+
+
+
+
+
+
+
+
+************************************************************************************************************
+/* Hello World Example
+
+   This example code is in the Public Domain (or CC0 licensed, at your option.)
+
+   Unless required by applicable law or agreed to in writing, this
+   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+   CONDITIONS OF ANY KIND, either express or implied.
+*/
+#include <stdio.h>
+#include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "esp_system.h"
+#include "esp_spi_flash.h"
+#include "freertos/queue.h"
+#include "freertos/timers.h"
+#include "output.h"
+#include "input.h"
+#include "freertos/event_groups.h"
+
+xTimerHandle xTimers[2];
+#define BlueLED 5
+#define RedLED 3
+#define GreenLED 4
+#define BtnBuiltIn 9
+
+#define SELECT_OUTPUT_PIN GreenLED
+#define SELECT_OUTPUT_PIN2 RedLED
+#define EVT_BTN_PRESS (1 << 0)
+#define EVT_UART_RECV (1 << 1)
+
+EventGroupHandle_t xCreatedEventGroup;
+void task_EVTGRP_handle(void *vParameter)
+{
+    for(;;){
+        EventBits_t uxBits = xEventGroupWaitBits(
+                                                xCreatedEventGroup,
+                                                EVT_BTN_PRESS | EVT_UART_RECV,
+                                                pdTRUE,  // Clear evt bit before returning
+                                                pdFALSE,
+                                                portMAX_DELAY //wait
+                                                                    );
+        if(uxBits & EVT_BTN_PRESS){
+            printf("BtnPress \n");
+        }
+        if(uxBits & EVT_UART_RECV){
+            
+        }
+    }
+    
+}
+
+static void IRAM_ATTR BtnCallback(int pin)
+{
+    if(pin == BtnBuiltIn){
+        BaseType_t pxHigherPriorityTaskWoken;
+        xEventGroupSetBitsFromISR(xCreatedEventGroup,EVT_BTN_PRESS, &pxHigherPriorityTaskWoken); 
+    }
+}
+
+void vTimerCallback(TimerHandle_t xTimer)
+{
+    static uint32_t cnt;
+    configASSERT(xTimer);
+    uint32_t ulCount;
+    ulCount = (uint32_t) pvTimerGetTimerID(xTimer);
+    if(ulCount == 0){
+        cnt++;
+        gpio_set_level(SELECT_OUTPUT_PIN2,cnt%2);
+        printf("TimerBlink Hello \n");
+    }
+    else if(ulCount == 1){
+        cnt++;
+        gpio_set_level(SELECT_OUTPUT_PIN,cnt%2);
+        printf("TimerPrint Hello \n");
+    }
+}
+
+void app_main(void)
+{
+    xTimers[0] = xTimerCreate("TimerBlink",pdMS_TO_TICKS(500),pdTRUE,(void *) 0,vTimerCallback);
+    xTimers[1] = xTimerCreate("TimerPrint",pdMS_TO_TICKS(1000),pdTRUE,(void *) 1,vTimerCallback);
+    output_io_create(SELECT_OUTPUT_PIN);
+    output_io_create(SELECT_OUTPUT_PIN2);
+    
+    input_io_conf(BtnBuiltIn,GPIO_INTR_NEGEDGE);
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(BtnBuiltIn, BtnCallback, (void*)BtnBuiltIn);
+
+    xCreatedEventGroup = xEventGroupCreate();
+    if(xCreatedEventGroup != NULL) printf("EvtGrp was created \n"); 
+    else {printf("EvtGrp was not created \n");}
+    xTaskCreate(task_EVTGRP_handle,"event group task",1024,NULL,4,NULL);
+    for(uint8_t i=0; i < 2;i++)
+    {
+        if(xTimers[i] != NULL)
+            if(xTimerStart(xTimers[i],0) == pdPASS){
+                printf("Timer %d pass \n",i);
+            }
+    }
+    
+}
+************************************************************************************************************
