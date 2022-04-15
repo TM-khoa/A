@@ -8,14 +8,15 @@
 #include "sdkconfig.h"
 #include "esp_log.h"
 #include "MAX30003.h"
+
 /*
- This code demonstrates how to use the SPI master half duplex mode to read/write a AT932C46D EEPROM (8-bit mode).
+ This code demonstrates how to use the SPI master full duplex mode to read/write a MAX30003 ECG sensor.
 */
 #  define MAX30003_HOST    SPI2_HOST
 #  define PIN_NUM_MISO 2
-#  define PIN_NUM_MOSI 1
+#  define PIN_NUM_MOSI 7
 #  define PIN_NUM_CLK  6
-#  define PIN_NUM_CS   7
+#  define PIN_NUM_CS   10
 #  define PIN_NUM_INTB 8
 #  define PIN_NUM_INT2B 9
 static const char TAG[] = "main";
