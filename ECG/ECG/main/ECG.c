@@ -8,6 +8,8 @@
 #include "sdkconfig.h"
 #include "esp_log.h"
 #include "MAX30003.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 
 /*
  This code demonstrates how to use the SPI master full duplex mode to read/write a MAX30003 ECG sensor.
@@ -20,6 +22,24 @@
 #  define PIN_NUM_INTB 8
 #  define PIN_NUM_INT2B 9
 static const char TAG[] = "main";
+static xQueueHandle qINTB = NULL;
+
+
+// static void IRAM_ATTR INTB2B_ISR(void* arg)
+// {
+//     gpio_num_t gpio_num = (gpio_num_t) arg;
+//     xQueueSendFromISR(qINTB, &gpio_num, NULL);
+// }
+
+// static void INTB2B_cb()
+// {
+//     gpio_num_t gpio_num ;
+//     for(;;){
+//         gpio_isr
+//     }
+
+// }
+
 void app_main(void)
 {
     esp_err_t ret;
@@ -46,20 +66,25 @@ void app_main(void)
     MAX30003_handle_t MAX30003_handle;
     ESP_LOGI(TAG, "Initializing device...");
     ret = MAX30003_init(&MAX30003_config,&MAX30003_handle);
-    if(ret == ESP_OK) ESP_LOGI(TAG,"Attach MAX30003 to bus succesfully");
+    if(ret == ESP_OK) ESP_LOGI(TAG,"Init done");
 
-    uint32_t out_data=0;
+    
+    qINTB = xQueueCreate(2,sizeof(gpio_num_t));
+    // xTaskCreate(INTB2B_cb,"INTB2B_cb",1024,NULL,3,NULL);
+
+    
     uint32_t DataWrite = EN_LONINT | EN_EOVF | EN_RRINT;
     ret = MAX30003_write(MAX30003_handle,REG_ENINTB,DataWrite);
     if(ret != ESP_OK) ESP_LOGE(TAG,"ErrWrite: 0x%x",ret);
 
-    ret = MAX30003_read(MAX30003_handle,REG_ENINTB,&out_data);
+    ret = MAX30003_read(MAX30003_handle,REG_INFO,&out_data);
     if(ret != ESP_OK) ESP_LOGE(TAG,"ErrRead: 0x%x",ret);
 
     if((out_data & ((uint32_t)0xFF << 24)) || out_data == 0){
         ESP_LOGW(TAG,"No data or data corrupt: %ld",out_data);
     }
     else ESP_LOGI(TAG,"Out_Data = 0x%x, DataWrite: 0x%x",out_data,DataWrite);
+    
     while (1) {
         // Add your main loop handling code here.
         vTaskDelay(1);

@@ -41,17 +41,6 @@ static void cs_low(spi_transaction_t* t)
     ESP_EARLY_LOGV(TAG, "cs low %d.", ((MAX30003_context_t*)t->user)->cfg.cs_io);
 }
 
-void INTB_ISR(void* arg)
-{
-    MAX30003_context_t* ctx = (MAX30003_context_t *) arg;
-    
-}
-
-void INT2B_ISR(void* arg)
-{
-    MAX30003_context_t* ctx = (MAX30003_context_t *) arg;
-
-}
 
 esp_err_t MAX30003_init(const MAX30003_config_t *cfg, MAX30003_context_t** out_ctx)
 {
@@ -109,16 +98,16 @@ esp_err_t MAX30003_init(const MAX30003_config_t *cfg, MAX30003_context_t** out_c
     /** 
      *  gắn hàm xử lý ngắt vào 2 chân INTB và INT2B
      */
-    err = gpio_isr_handler_add(ctx->cfg.intb,INTB_ISR,ctx);
-    if (err != ESP_OK) {
-            goto cleanup;
-        }
-    err = gpio_isr_handler_add(ctx->cfg.int2b,INT2B_ISR,ctx);
-    if (err != ESP_OK) {
-            goto cleanup;
-        }
-    gpio_intr_enable(ctx->cfg.intb);
-    gpio_intr_enable(ctx->cfg.int2b);
+    // err = gpio_isr_handler_add(ctx->cfg.intb,INTB2B_ISR,ctx->cfg.intb);
+    // if (err != ESP_OK) {
+    //         goto cleanup;
+    //     }
+    // err = gpio_isr_handler_add(ctx->cfg.int2b,INTB2B_ISR,ctx->cfg.int2b);
+    // if (err != ESP_OK) {
+    //         goto cleanup;
+    //     }
+    // gpio_intr_enable(ctx->cfg.intb);
+    // gpio_intr_enable(ctx->cfg.int2b);
     /** sau khi cấu hình xong, gửi ngược context *ctx về *out_ctx
      *  ra bên ngoài hàm để sử dụng cho mục đích khác
      */
@@ -183,5 +172,21 @@ esp_err_t MAX30003_INTB2B_callback(MAX30003_context_t *cxt)
     return ESP_OK;
 }
 
-
+esp_err_t MAX30003_get_info(MAX30003_context_t *ctx)
+{
+    esp_err_t err;
+    uint32_t info=0;
+    err = MAX30003_read(ctx,REG_INFO,&info);
+    if(err != ESP_OK){
+        ESP_LOGE(TAG,"Not found MAX30003",NULL);
+    }
+    else{
+        if(info & (5 << 24)){
+            ESP_LOGI(TAG,"Found MAX30003, info value: %lu",info);
+        }
+        else{
+            ESP_LOGW(TAG,"Uncorrect ID pattern: %lu",info);
+        }
+    }
+}
 
