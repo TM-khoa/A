@@ -1,0 +1,29 @@
+{
+    "idf.adapterTargetName": "esp32c3",
+    "cmake.configureOnOpen": false,
+    "files.associations": {
+        "gpio.h": "c",
+        "input.h": "c",
+        "algorithm": "c",
+        "chrono": "c",
+        "iterator": "c",
+        "xhash": "c",
+        "xtree": "c",
+        "xutility": "c",
+        "freertos.h": "c",
+        "queue.h": "c",
+        "task.h": "c",
+        "portable.h": "c",
+        "portmacro.h": "c",
+        "esp_system.h": "c",
+        "timers.h": "c",
+        "output.h": "c",
+        "spi_master.h": "c",
+        "spi_eeprom.h": "c",
+        "spi_common.h": "c",
+        "*.ipp": "c",
+        "*.inc": "c",
+        "max30003.h": "c"
+    },
+    "idf.portWin": "COM10"
+}
