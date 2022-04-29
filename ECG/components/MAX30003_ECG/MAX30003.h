@@ -62,7 +62,6 @@
  * EFIT[4:0] value will be set inside the code
  */
 #define MNGR_INT_EFIT_POS   BIT19 // EFIT position
-#define CHECK_EFIT_VALUE(__VALUE__)    (if(__VALUE__ <= 32))
 
 /**
  * @brief FAST MODE Interrupt Clear
@@ -83,8 +82,9 @@
  *  10 = Self-Clear RRINT after one ECG data rate cycle, approximately 2ms to 8ms
  *  11 = Reserved. Do not use
  */
-#define MNGR_INT_CLR_RRINT_1    BIT5
-#define MNGR_INT_CRL_RRINT_0    BIT4
+#define MNGR_INT_CLR_RRINT_STATUS    (BIT4 & BIT5)
+#define MNGR_INT_CLR_RRINT_RTOR    BIT4
+#define MNGR_INT_CLR_RRINT_SELF    BIT5
 
 /**
  * @brief Sample Synchronization Pulse (SAMP) Clear
@@ -100,8 +100,10 @@
  * 10 = issued every 4th sample instant
  * 11 = issued every 16th sample instant
  */
-#define MNGR_INT_SAMP_IT_1      BIT1
-#define MNGR_INT_SAMP_IT_0      BIT0
+#define MNGR_INT_SAMP_IT_1      0
+#define MNGR_INT_SAMP_IT_2      1
+#define MNGR_INT_SAMP_IT_4      2
+#define MNGR_INT_SAMP_IT_16      3
 /**********************************************************************************/
 /** 
  * @name MANAGE GENERAL/DYNAMIC MODE
@@ -146,20 +148,20 @@
  * @brief Revision ID readback (read-only)
  */
 #define REG_INFO        0x0F
-#define RevisionID      (BIT16 | BIT17 | BIT18 | BIT19)
+#define RevisionID      (0b1111 << 16)
 /**********************************************************************************/
 /**
  * @name CONFIG GENERAL
  * @brief  which governs general settings, most significantly the master 
  * clock rate for all internal timing operations
  */
-#define REG_CNFG_GEN 0x10
+#define REG_GEN 0x10
 
 /**
  * @brief Ultra-Low Power Lead-On Detection Enable
  * ULP mode is only active when the ECG channel is powered down/disabled.
  */
-#define CNFG_GEN_EN_ULP_LON BIT22 
+#define GEN_EN_ULP_LON BIT22 
 
 /**
  * @brief Master Clock Frequency
@@ -168,13 +170,13 @@
  * from FCLK, which is always 32.768Khz
  * 
  */
-#define CNFG_GEN_FMSTR_32768_512HZ (BIT21 & BIT20)
-#define CNFG_GEN_FMSTR_32000_500HZ  BIT20
-#define CNFG_GEN_FMSTR_32000_200HZ  BIT21
-#define CNFG_GEN_FMSTR_31968_199HZ  BIT21 | BIT20
+#define GEN_FMSTR_32768_512HZ (BIT21 & BIT20)
+#define GEN_FMSTR_32000_500HZ  BIT20
+#define GEN_FMSTR_32000_200HZ  BIT21
+#define GEN_FMSTR_31968_199HZ  BIT21 | BIT20
 
 
-#define CNFG_GEN_EN_ECG BIT19 // ECG Channel Enable
+#define GEN_EN_ECG BIT19 // ECG Channel Enable
 
 /**
  * @brief DC Lead-Off Detection Enable
@@ -183,7 +185,7 @@
  * Uses current sources and comparator thresholds set below.
  * 
  */
-#define CNFG_GEN_EN_DCLOFF BIT12 
+#define GEN_EN_DCLOFF BIT12 
 
 /**
  * @brief DC Lead-Off Current Polarity (if current sources are enabled/connected)
@@ -191,7 +193,8 @@
  * 1 = ECGP - Pulldown ECGN – Pullup
  * 
  */
-#define CNFG_GEN_DCLOFF_IPOL BIT11
+#define GEN_IPOL_ECGP_PD_ECGN_PU BIT11
+#define GEN_IPOL_ECGP_PU_ECGN_PD ~BIT11
 
 /**
  * @brief DC Lead-Off Current Magnitude Selection
@@ -202,9 +205,9 @@
  * 100 = 50nA
  * 101 = 100nA
  */
-#define CNFG_GEN_IMAG_2 BIT10
-#define CNFG_GEN_IMAG_1 BIT9
-#define CNFG_GEN_IMAG_0 BIT8
+#define GEN_IMAG_2 BIT10
+#define GEN_IMAG_1 BIT9
+#define GEN_IMAG_0 BIT8
 
 
 /**
@@ -214,8 +217,8 @@
  * 10 = VMID ± 450mV
  * 11 = VMID ± 500mV
  */
-#define CNFG_GEN_DCLOFF_VTH_1 BIT7
-#define CNFG_GEN_DCLOFF_VTH_0 BIT6
+#define GEN_DCLOFF_VTH_1 BIT7
+#define GEN_DCLOFF_VTH_0 BIT6
 
 /**
  * @brief Enable and Select Resistive Lead Bias Mode
@@ -224,7 +227,7 @@
  * If EN_ECG is not asserted at the same time as prior to EN_RBIAS[1:0] being set to
  * 01, then EN_RBIAS[1:0] will remain set to 00
  */
-#define CNFG_GEN_EN_RBIAS BIT4
+#define GEN_EN_RBIAS BIT4
 /**********************************************************************************/
 /** 
  * @name CONFIG CALIBRATION
@@ -232,28 +235,29 @@
  * (VCALP and VCALN) The output of the voltage sources can be routed to the ECG inputs through the channel
  * input MUXes to facilitate end-to-end testing operations
  */
-#define REG_CNFG_CAL 0x12
+#define REG_CAL 0x12
 
 /**
  * @brief Calibration Source (VCALP and VCALN) Enable
  * 0 = Calibration sources and modes disabled
  * 1 = Calibration sources and modes enabled
  */
-#define CNFG_CAL_EN_VCAL BIT22 //Calibration Source (VCALP and VCALN) Enable
+#define CAL_EN_VCAL BIT22 //Calibration Source (VCALP and VCALN) Enable
 
 /**
  * @brief Calibration Source Mode Selection
  * 0 = Unipolar, sources swing between VMID ± VMAG and VMID
  * 1 = Bipolar, sources swing between VMID + VMAG and VMID - VMAG
  */
-#define CNFG_CAL_VMODE BIT21 //Calibration Source Mode Selection
+#define CAL_VMODE BIT21 //Calibration Source Mode Selection
 
 /**
  * @brief Calibration Source Magnitude Selection (VMAG)
  * 0 = 0.25mV
  * 1 = 0.50mV
  */
-#define CNFG_CAL_VMAG BIT20 // Calibration Source Magnitude Selection (VMAG)
+#define CAL_VMAG_025mV ~BIT20
+#define CAL_VMAG_050mV BIT20
 
 /**
  * Calibration Source Frequency Selection (FCAL)
@@ -265,53 +269,56 @@
  * 101 = FMSTR /217 (Approximately 1/4Hz)
  * 110 = FMSTR /219 (Approximately 1/16Hz)
  * 111 = FMSTR /221 (Approximately 1/64Hz)
- * Actual frequencies are determined by FMSTR selection (see CNFG_GEN for
+ * Actual frequencies are determined by FMSTR selection (see GEN for
  * details), approximate frequencies are based on a 32768Hz clock (FMSTR[2:0] = 000).
  * TCAL = 1/FCAL.
  */
-#define CNFG_CAL_FCAL_2     BIT14
-#define CNFG_CAL_FCAL_1     BIT13
-#define CNFG_CAL_FCAL_0     BIT12
-
-
+#define CAL_FCAL_207    (BIT12 & BIT13 & BIT14)
+#define CAL_FCAL_209    BIT12
+#define CAL_FCAL_211   BIT13  
+#define CAL_FCAL_213   (BIT12 | BIT13)
+#define CAL_FCAL_215    BIT14
+#define CAL_FCAL_217    (BIT12 | BIT14)
+#define CAL_FCAL_219    (BIT13 | BIT14)
+#define CAL_FCAL_221    (BIT12 | BIT13 | BIT14)
 /**
  * @brief Calibration Source Duty Cycle Mode Selection
  * 0 = Use CAL_THIGH to select time high for VCALP and VCALN
  * 1 = THIGH = 50% (CAL_THIGH[10:0] are ignored)
  */
-#define CNFG_CAL_FIFTY      BIT11 
+#define CAL_FIFTY      BIT11 
 
 /**
  * @brief Calibration Source Time High Selection
  * THIGH = THIGH[10:0] x CAL_RES
- * CAL_RES is determined by FMSTR selection (see CNFG_GEN for details)
+ * CAL_RES is determined by FMSTR selection (see GEN for details)
  * if FMSTR[2:0] = 000,CAL_RES = 30.52µs.
  * THIGH value will be set inside the code
  */
-#define CNFG_CAL_THIGH_POS ~BIT0
+#define CAL_THIGH       ~BIT11
 
 /**********************************************************************************/
 /** 
  * @name CONFIG EMUX
- * @brief CNFG_EMUX is a read/write register which configures the operation, settings, and 
+ * @brief EMUX is a read/write register which configures the operation, settings, and 
  * functionality of the Input Multiplexer associated with the ECG channel
  */
-#define REG_CNFG_EMUX 0x14
+#define REG_EMUX 0x14
 
 /**
  * @brief ECG Input Polarity Selection
  * 0 = Non-inverted
  * 1 = Inverted
  */
-#define CNFG_EMUX_POL   BIT23 //ECG Input Polarity Selection (1 = Inverted) 
+#define EMUX_POL   BIT23 //ECG Input Polarity Selection (1 = Inverted) 
 
 /**
  * @brief Open the ECGP Input Switch (most often used for testing and calibration studies)
  * 0 = ECGP is internally connected to the ECG AFE Channel
  * 1 = ECGP is internally isolated from the ECG AFE Channel
  */
-#define CNFG_EMUX_OPENP BIT21 
-#define CNFG_EMUX_OPENN BIT20 
+#define EMUX_OPENP BIT21 
+#define EMUX_OPENN BIT20 
 
 /**
  * @brief ECGN Calibration Selection
@@ -319,24 +326,27 @@
  * 01 = Input is connected to VMID
  * 10 = Input is connected to VCALP (only available if CAL_EN_VCAL = 1)
  * 11 = Input is connected to VCALN (only available if CAL_EN_VCAL = 1)
- * ECG calib select position, shift left CNFG_EMUX_CALP_SEL_xx to valid 
- * ECGP position or ECGN position (CNFG_EMUX_CAL_SEL_xx << CNFG_EMUX_CAL_SEL_POS_ECGN)
+ * ECG calib select position, shift left EMUX_CALP_SEL_xx to valid 
+ * ECGP position or ECGN position (EMUX_CAL_SEL_xx << EMUX_CAL_SEL_POS_ECGN)
  */
-#define CNFG_EMUX_CAL_SEL_NO_CAL   (BIT1 & BIT2) 
-#define CNFG_EMUX_CAL_SEL_VMID     BIT1 
-#define CNFG_EMUX_CAL_SEL_VCALP    BIT2 
-#define CNFG_EMUX_CAL_SEL_VCALN    (BIT1 | BIT2) 
-#define CNFG_EMUX_CAL_SEL_POS_ECGP         BIT18 
-#define CNFG_EMUX_CAL_SEL_POS_ECGN         BIT16  
+#define EMUX_CALP_SEL_NO_CAL   (BIT18 & BIT19) 
+#define EMUX_CALP_SEL_VMID     BIT18 
+#define EMUX_CALP_SEL_VCALP    BIT19 
+#define EMUX_CALP_SEL_VCALN    (BIT18 | BIT19)  
+
+#define EMUX_CALN_SEL_NO_CAL   (BIT17 & BIT16) 
+#define EMUX_CALN_SEL_VMID     BIT16 
+#define EMUX_CALN_SEL_VCALP    BIT17 
+#define EMUX_CALN_SEL_VCALN    (BIT17 | BIT16)
 /**********************************************************************************/
 /** 
  * @name CONFIG ECG
  * @brief configures the operation, settings, and functionality of the ECG channel.
- * Anytime a change to CNFG_ECG is made, there may be discontinuities in the ECG record and possibly 
+ * Anytime a change to ECG is made, there may be discontinuities in the ECG record and possibly 
  * changes to thesize of the time steps recorded in the ECG FIFO
  * 
  */
-#define REG_CNFG_ECG        0x15
+#define REG_ECG        0x15
 
 /**
  * @brief ECG Data Rate (also dependent on FMSTR selection)
@@ -353,8 +363,8 @@
  * FMSTR = 11: fMSTR = 31968Hz, tRES = 15.64µs (199.8Hz ECG progressions)
  * 10 = 199.8sps
  */
-#define CNFG_ECG_RATE_1     BIT23
-#define CNFG_ECG_RATE_0     BIT22
+#define ECG_RATE_1     BIT23
+#define ECG_RATE_0     BIT22
 
 /**
  * @brief ECG Channel Gain Setting
@@ -363,12 +373,17 @@
  * 10 = 80V/V
  * 11 = 160V/V
  */
-#define CNFG_ECG_GAIN_20V   (BIT17 & BIT16)
-#define CNFG_ECG_GAIN_40V   BIT16
-#define CNFG_ECG_GAIN_80V   BIT17
-#define CNFG_ECG_GAIN_160V  (BIT17 | BIT16)
+#define ECG_GAIN_20V   (BIT17 & BIT16)
+#define ECG_GAIN_40V   BIT16
+#define ECG_GAIN_80V   BIT17
+#define ECG_GAIN_160V  (BIT17 | BIT16)
 
-#define CNFG_ECG_DHPF       BIT14 // enable 0.5Hz High-Pass Filter through ECG Channel
+/**
+ * @brief ECG Channel Digital High-Pass Filter Cutoff Frequency
+ * 
+ */
+#define ECG_DHPF_BYPASS     ~BIT14
+#define ECG_DHPF_05HZ       BIT14 // enable 0.5Hz High-Pass Filter through ECG Channel
 
 /**
  * ECG Channel Digital Low-Pass Filter Cutoff Frequency
@@ -377,18 +392,20 @@
  * 10 = approximately 100Hz (Available for 512, 256, 500, and 250sps ECG Rate selections only)
  * 11 = approximately 150Hz (Available for 512 and 500sps ECG Rate selections only)
  */
-#define CNFG_ECG_DLPF_1     BIT13
-#define CNFG_ECG_DLPF_0     BIT12
+#define ECG_DLPF_BYPASS (BIT13 & BIT12) 
+#define ECG_DLPF_40HZ   BIT12
+#define ECG_DLPF_100HZ  BIT13
+#define ECG_DLPF_150HZ  (BIT13 | BIT12) 
 /**********************************************************************************/
 /**
  * 
- * @brief: CNFG_RTOR is a two-part read/write register that configures the operation, 
+ * @brief: RTOR is a two-part read/write register that configures the operation, 
  * settings, and function of the RTOR heart rate detection block. The first register contains 
  * algorithmic voltage gain and threshold parameters, the second contains algorithmic timing parameters.
  * 
  */
-#define REG_CNFG_RTOR1  0x1D
-#define REG_CNFG_RTOR2  0x1E
+#define REG_RTOR1  0x1D
+#define REG_RTOR2  0x1E
 
 
 /**
@@ -408,10 +425,18 @@
  * 1010 = 26
  * 1011 = 28
  */
-#define CNFG_RTOR1_WNDW_3    BIT23
-#define CNFG_RTOR1_WNDW_2    BIT22
-#define CNFG_RTOR1_WNDW_1    BIT21
-#define CNFG_RTOR1_WNDW_0    BIT20
+#define RTOR1_WNDW_6     (0 << 20)
+#define RTOR1_WNDW_8     (1 << 20)
+#define RTOR1_WNDW_10    (2 << 20)
+#define RTOR1_WNDW_12    (3 << 20)
+#define RTOR1_WNDW_14    (4 << 20)
+#define RTOR1_WNDW_16    (5 << 20)
+#define RTOR1_WNDW_18    (6 << 20)
+#define RTOR1_WNDW_20    (7 << 20)
+#define RTOR1_WNDW_22    (8 << 20)
+#define RTOR1_WNDW_24    (9 << 20)
+#define RTOR1_WNDW_26    (10 << 20)
+#define RTOR1_WNDW_28    (11 << 20)
 
 /**
  * @brief R to R Gain (where Gain = 2^GAIN[3:0], plus an auto-scale option). This is used to maximize 
@@ -426,17 +451,30 @@
  * 0110 = 64, 1110 = 16384
  * 0111 = 128, 1111 = Auto-Scale (default)
  */
-#define CNFG_RTOR1_GAIN_3    BIT19
-#define CNFG_RTOR1_GAIN_2    BIT18
-#define CNFG_RTOR1_GAIN_1    BIT17
-#define CNFG_RTOR1_GAIN_0    BIT16
+#define RTOR1_GAIN_1        (0  << 16)
+#define RTOR1_GAIN_2        (1  << 16)
+#define RTOR1_GAIN_4        (2  << 16)
+#define RTOR1_GAIN_8        (3  << 16)
+#define RTOR1_GAIN_16       (4  << 16)
+#define RTOR1_GAIN_32       (5  << 16)
+#define RTOR1_GAIN_64       (6  << 16)
+#define RTOR1_GAIN_128      (7  << 16)
+#define RTOR1_GAIN_256      (8  << 16)
+#define RTOR1_GAIN_512      (9  << 16)
+#define RTOR1_GAIN_1024     (10  << 16)
+#define RTOR1_GAIN_2048     (11  << 16)
+#define RTOR1_GAIN_4096     (12  << 16)
+#define RTOR1_GAIN_8192     (13  << 16)
+#define RTOR1_GAIN_16384    (14  << 16)
+#define RTOR1_GAIN_AUTO     (15  << 16)
+
 
 /**
  * @brief ECG RTOR Detection Enable
  * 0 = RTOR Detection disabled
  * 1 = RTOR Detection enabled if EN_ECG is also enabled
  */
-#define CNFG_RTOR1_EN_RTOR        BIT15 
+#define RTOR1_EN_RTOR        BIT15 
 
 /**
  * @brief R to R Peak Averaging Weight Factor
@@ -447,17 +485,19 @@
  * 11 = 16
  * Peak_Average(n) = [Peak(n) + (RTOR_PAVG-1) x Peak_Average(n-1)] / RTOR_PAVG
  */
-#define CNFG_RTOR1_PAVG_1    BIT13
-#define CNFG_RTOR1_PAVG_0    BIT12
+#define RTOR1_PAVG_2    (BIT12 & BIT13)
+#define RTOR1_PAVG_4    BIT12
+#define RTOR1_PAVG_8    BIT13
+#define RTOR1_PAVG_16   (BIT12 | BIT13) 
 
 /**
  * @brief R to R Peak Threshold Scaling Factor
  * This is the fraction of the Peak Average value used in the Threshold computation.
  * Values of 1/16 to 16/16 are selected directly by (RTOR_PTSF[3:0]+1)/16, default is 4/16
  * PTFS will be set inside the code
- * Shift left value with CNFG_RTOR_PTFS_POS position
+ * Shift left value with RTOR_PTFS_POS position
  */
-#define CNFG_RTOR1_PTSF_POS    BIT8
+#define RTOR1_PTSF_POS    BIT8
 
 /**
  * @brief R to R Minimum Hold Off
@@ -465,11 +505,11 @@
  * static portion of the Hold Off criteria.
  * Values of 0 to 63 are supported, default is 32
  * tHOLD_OFF_MIN = HOFF[5:0] * tRTOR, where tRTOR is ~8ms, as determined by
- * FMSTR[1:0] in the CNFG_GEN register (representing approximately ¼ second).
+ * FMSTR[1:0] in the GEN register (representing approximately ¼ second).
  * The R to R Hold Off qualification interval is tHold_Off = MAX(tHold_Off_Min, tHold_Off_Dyn)
- * Shift left value with CNFG_RTOR2_HOFF_POS position
+ * Shift left value with RTOR2_HOFF_POS position
  */
-#define CNFG_RTOR2_HOFF_POS BIT16
+#define RTOR2_HOFF_POS BIT16
 
 /**
  * @brief R to R Interval Averaging Weight Factor
@@ -482,8 +522,10 @@
  * 11 = 16
  * Interval_Average(n) = [Interval(n) + (RAVG-1) x Interval_Average(n-1)] / RAVG
  */
-#define CNFG_RTOR2_RAVG_1 BIT13
-#define CNFG_RTOR2_RAVG_0 BIT12
+#define RTOR2_RAVG_2 (BIT12 & BIT13)
+#define RTOR2_RAVG_4 BIT12
+#define RTOR2_RAVG_8 BIT13
+#define RTOR2_RAVG_16 (BIT12 | BIT13)
 
 
 /**
@@ -493,9 +535,9 @@
  * Values of 0/8 to 7/8 are selected directly by RTOR_RHSF[3:0]/8, default is 4/8.
  * If 000 (0/8) is selected, then no dynamic factor is used and the holdoff criteria is
  * determined by HOFF[5:0] only 
- * Shift left value with CNFG_RTOR2_RHSF_POS position
+ * Shift left value with RTOR2_RHSF_POS position
  */
-#define CNFG_RTOR2_RHSF_POS BIT8
+#define RTOR2_RHSF_POS BIT8
 
 /**********************************************************************************/
 #define REG_ECG_BURST   0x20
@@ -503,23 +545,109 @@
 #define REG_RTOR        0x25
 
 #define ETAG_VALID      0
-#define ETAG_FAST       1
-#define ETAG_VALID_EOF  2
-#define ETAG_FAST_EOF   3
-#define ETAG_EMPTY      6
-#define ETAG_OVERFLOW   7
+#define ETAG_FAST       0b001000
+#define ETAG_VALID_EOF  0b010000
+#define ETAG_FAST_EOF   0b011000
+#define ETAG_EMPTY      0b110000
+#define ETAG_OVERFLOW   0b111000
+#define ETAG_MASK       0b111000
 /**********************************************************************************/
-typedef struct {
+typedef struct MAX30003_EN_INT_t{
+    unsigned int  E_INT;
+    unsigned int  E_OVF;
+    unsigned int  E_FS;
+    unsigned int  E_DCOFF;
+    unsigned int  E_LON;
+    unsigned int  E_RR;
+    unsigned int  E_SAMP;
+    unsigned int  E_PLL;
+    uint8_t REG;
+}EN_INT_t;
+typedef struct MAX30003_MNGR_INT_t{
+    unsigned int EFIT;
+    unsigned int CLR_FAST;
+    unsigned int CLR_RRINT;
+    unsigned int CLR_SAMP;
+    unsigned int SAMP_IT;
+    uint8_t REG;
+}MNGR_INT_t;
+typedef struct MAX30003_MNGR_DYN_t{
+    unsigned int FAST;
+    unsigned int FAST_TH;
+    uint8_t REG;
+}MNGR_DYN_t;
+typedef struct MAX30003_GEN_t{
+    unsigned int ULP_LON;
+    unsigned int FMSTR;
+    unsigned int ECG;
+    unsigned int DCLOFF;
+    unsigned int IPOL;
+    unsigned int IMAG;
+    uint8_t REG;
+}GEN_t;
+typedef struct MAX30003_CAL_t{
+    unsigned int VCAL;
+    unsigned int VMODE;
+    unsigned int VMAG;
+    unsigned int FCAL;
+    unsigned int FIFTY;
+    unsigned int THIGH; 
+    uint8_t REG;
+}CAL_t;
+typedef struct MAX30003_EMUX_t{
+    unsigned int POL;
+    unsigned int OPENP;
+    unsigned int OPENN;
+    unsigned int CALP;
+    unsigned int CALN;
+    uint8_t REG;
+}EMUX_t;
+typedef struct MAX30003_ECG_t{
+    unsigned int RATE;
+    unsigned int GAIN;
+    unsigned int DHPF;
+    unsigned int DLPF;
+    uint8_t REG;
+}ECG_t;
+typedef struct MAX30003_RTOR_t{
+    unsigned int WNDW;
+    unsigned int GAIN;
+    unsigned int EN;
+    unsigned int PAVG;
+    unsigned int PTSF;
+    unsigned int HOFF;
+    unsigned int RAVG;
+    unsigned int RHSF;
+    uint8_t REG;
+}RTOR_t;
+typedef struct MAX30003_config_register_t{
+     MNGR_DYN_t* DYN;
+     MNGR_INT_t* INT;
+     GEN_t* GEN;
+     CAL_t* CAL;
+     EMUX_t* EMUX;
+     ECG_t* ECG;
+     RTOR_t* RTOR;
+     EN_INT_t* EN_INT;
+}MAX30003_config_register_t;
+typedef struct MAX30003_status_t{
+    bool  EINT;
+    bool  EOVF;
+    bool  FS;
+    bool  DCOFF;
+    bool  LONINT;
+    bool  RR;
+    bool  SAMP;
+    bool  PLL;
+}MAX30003_status_t;
+typedef struct MAX30003_config_pin_t{
     spi_host_device_t host; ///< The SPI host used, set before calling `MAX30003_init()`
     gpio_num_t cs_io;       ///< CS gpio number, set before calling `MAX30003_init()`
     gpio_num_t miso_io;     ///< MISO gpio number, set before calling `MAX30003_init()`
     gpio_num_t intb;        ///< INTB pin of MAX30003
     gpio_num_t int2b;       ///< INT2B pin of MAX30003
-} MAX30003_config_t;
+}MAX30003_config_pin_t;
 
-typedef struct {
-
-}MAX30003_param_setting_t;
 
 typedef struct MAX30003_context_t* MAX30003_handle_t;
 /**********************************************************************************/
@@ -534,7 +662,7 @@ typedef struct MAX30003_context_t* MAX30003_handle_t;
  *  - ESP_ERR_NO_MEM: if semaphore create failed.
  *  - or other return value from `spi_bus_add_device()` or `gpio_isr_handler_add()`.
  */
-esp_err_t MAX30003_init(const MAX30003_config_t *cfg, MAX30003_handle_t *out_handle);
+esp_err_t MAX30003_init(const MAX30003_config_pin_t *cfg, MAX30003_handle_t *out_handle);
 /**********************************************************************************/
 /**
  * @brief Read a register 24 bits from the MAX30003.
@@ -544,7 +672,7 @@ esp_err_t MAX30003_init(const MAX30003_config_t *cfg, MAX30003_handle_t *out_han
  * @param out_data  Buffer to output 24 bits the read data.
  * @return return value from `spi_device_get_trans_result()`.
  */
-esp_err_t MAX30003_read(MAX30003_handle_t handle,uint8_t reg, uint32_t *out_data);
+esp_err_t MAX30003_read(MAX30003_handle_t handle,uint8_t reg, unsigned int *out_data);
 /**********************************************************************************/
 /**
  * @brief Write 3 bytes(3,2,1) into the MAX30003
@@ -559,7 +687,7 @@ esp_err_t MAX30003_read(MAX30003_handle_t handle,uint8_t reg, uint32_t *out_data
  *  - ESP_ERR_TIMEOUT: if the EEPROM is not able to be ready before the time in the spec. This may mean that the connection is not correct.
  *  - or return value from `spi_device_acquire_bus()` `spi_device_polling_transmit()`.
  */
-esp_err_t MAX30003_write(MAX30003_handle_t handle,uint8_t reg, uint32_t in_data);
+esp_err_t MAX30003_write(MAX30003_handle_t handle,uint8_t reg, unsigned int in_data);
 /**********************************************************************************/
 /**
  * @brief Check if MAX30003 present on SPI bus
@@ -570,7 +698,7 @@ esp_err_t MAX30003_write(MAX30003_handle_t handle,uint8_t reg, uint32_t in_data)
  *  - ESP_ERR_INVALID_RESPONSE: Received data from MAX30003 but nibble bits[20:23] is not 0101
  *  - ESP_ERR_TIMEOUT: no respond from MAX30003 
  */
-esp_err_t MAX30003_get_revID(MAX30003_handle_t handle);
+esp_err_t MAX30003_get_info(MAX30003_handle_t handle);
 /**********************************************************************************/
 /**
  * @brief Read ECG data on normal mode
@@ -591,5 +719,13 @@ esp_err_t MAX30003_read_RTOR(MAX30003_handle_t handle);
  *
  * @param ECG_Data: get value by reading register 0x21 or 0x20.
  */
-void MAX30003_check_ETAG(uint32_t ECG_Data);
+void MAX30003_check_ETAG(unsigned int ECG_Data);
+/**********************************************************************************/
+/**
+ * @brief set value of register CAL and read back and check if write and read have the same value
+ *
+ * @param handle Context of MAX30003 communication.
+ * @param value value to send to MAX30003 and read back to check if whether mismatch read and write
+ */
+esp_err_t MAX30003_set_get_register(MAX30003_handle_t handle,unsigned int reg,unsigned int value,char *NAME_REG);
 #endif

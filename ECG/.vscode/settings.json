@@ -23,7 +23,12 @@
         "spi_common.h": "c",
         "*.ipp": "c",
         "*.inc": "c",
-        "max30003.h": "c"
+        "max30003.h": "c",
+        "atomic": "c",
+        "charconv": "c",
+        "random": "c",
+        "stop_token": "c",
+        "type_traits": "c"
     },
     "idf.portWin": "COM10"
 }

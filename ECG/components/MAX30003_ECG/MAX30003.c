@@ -10,7 +10,7 @@
 static const char TAG[] = "MAX30003";
 /// Context (config and data) of MAX30003
 struct MAX30003_context_t{
-    MAX30003_config_t cfg;        ///< Configuration by the caller.
+    MAX30003_config_pin_t cfg;        ///< Configuration by the caller.
     spi_device_handle_t spi;    ///< SPI device handle
     SemaphoreHandle_t INTB2Bsem; ///< Semaphore for INTB and INT2B ISR
 };
@@ -23,7 +23,7 @@ typedef struct MAX30003_context_t MAX30003_context_t;
 // now. Using the version in LL instead.
 #define gpio_set_level  gpio_set_level_patch
 #include "hal/gpio_ll.h"
-static inline esp_err_t gpio_set_level_patch(gpio_num_t gpio_num, uint32_t level)
+static inline esp_err_t gpio_set_level_patch(gpio_num_t gpio_num, unsigned int level)
 {
     gpio_ll_set_level(&GPIO, gpio_num, level);
     return ESP_OK;
@@ -41,8 +41,7 @@ static void cs_low(spi_transaction_t* t)
     ESP_EARLY_LOGV(TAG, "cs low %d.", ((MAX30003_context_t*)t->user)->cfg.cs_io);
 }
 
-
-esp_err_t MAX30003_init(const MAX30003_config_t *cfg, MAX30003_context_t** out_ctx)
+esp_err_t MAX30003_init(const MAX30003_config_pin_t *cfg, MAX30003_context_t** out_ctx)
 {
     esp_err_t err = ESP_OK;
     // Nếu sử dụng SPI interrupt thì không thể sử dụng trên SPI1
@@ -125,7 +124,7 @@ cleanup:
     return err;
 }
 
-esp_err_t MAX30003_read(MAX30003_context_t *ctx,uint8_t reg, uint32_t *out_data)
+esp_err_t MAX30003_read(MAX30003_context_t *ctx,uint8_t reg, unsigned int *out_data)
 {
     spi_transaction_t trans = {
         .cmd = (reg << 1) | 0x01,
@@ -144,7 +143,7 @@ esp_err_t MAX30003_read(MAX30003_context_t *ctx,uint8_t reg, uint32_t *out_data)
     return ESP_OK;
 }
 
-esp_err_t MAX30003_write(MAX30003_context_t *ctx,uint8_t reg, uint32_t in_data)
+esp_err_t MAX30003_write(MAX30003_context_t *ctx,uint8_t reg, unsigned int in_data)
 {
     esp_err_t err;
     uint8_t DataTemp[4]= {0};
@@ -172,56 +171,64 @@ esp_err_t MAX30003_INTB2B_callback(MAX30003_context_t *cxt)
     return ESP_OK;
 }
 
-esp_err_t MAX30003_get_revID(MAX30003_context_t *ctx)
+esp_err_t MAX30003_get_info(MAX30003_context_t *ctx)
 {
     esp_err_t err = ESP_OK;
-    uint32_t revID=0;
-    err = MAX30003_read(ctx,REG_INFO,&revID);
+    unsigned int Info=0;
+    err = MAX30003_read(ctx,REG_INFO,&Info);
     if(err != ESP_OK){
         ESP_LOGE(TAG,"Not found MAX30003",NULL);
         return err;
     }
     else{
-        if(revID & (5 << 20)){
-            ESP_LOGI(TAG,"Found MAX30003, revision ID: 0x%x",revID);
+        if(Info & (5 << 20)){
+            ESP_LOGI(TAG,"Found MAX30003, INFO: 0x%x ,revision ID: 0x%x",Info, (Info & RevisionID));
             
         }
         else{
-            ESP_LOGW(TAG,"Respond but uncorrect pattern: 0x%x",revID);
+            ESP_LOGW(TAG,"Respond but uncorrect pattern: 0x%x",Info);
             err = ESP_ERR_INVALID_RESPONSE;
         }
     }
     return err;
 }
 
-void MAX30003_check_ETAG(uint32_t ECG_Data)
+void MAX30003_check_ETAG(unsigned int ECG_Data)
 {
-    uint32_t ETAG;
-    ETAG = (ECG_Data >> 3) & 7 ;
-    ESP_LOGI("ETAG","0x%x",ETAG);
+    unsigned int ETAG;
+    ETAG = ECG_Data & ETAG_MASK;
     switch(ETAG)
     {
         case ETAG_EMPTY:
-        ESP_LOGI("ECG_Data","Empty data",NULL);
+        ESP_LOGE("ETAG","Empty data",NULL);
         break;
         case ETAG_OVERFLOW:
+        ESP_LOGE("ETAG","Overflow",NULL);
         break;
         case ETAG_VALID:
+        ESP_LOGI("ETAG","Valid",NULL);
         break;
         case ETAG_VALID_EOF:
+        ESP_LOGI("ETAG","Valid EOF",NULL);
         break;
         case ETAG_FAST:
+        ESP_LOGW("ETAG","Fast",NULL);
         break;
         case ETAG_FAST_EOF:
+        ESP_LOGW("ETAG","Fast EOF",NULL);
         break;
-        
+        default:
+        {
+            ESP_LOGE("ETAG","Invalid ETAG",NULL);
+        }
+        break;
     }
 }
 
 esp_err_t MAX30003_read_FIFO_normal(MAX30003_context_t *ctx)
 {
     esp_err_t ret = ESP_OK;
-    uint32_t ECG_Data;
+    unsigned int ECG_Data;
     ret = MAX30003_read(ctx,REG_ECG_NORMAL,&ECG_Data);
     MAX30003_check_ETAG(ECG_Data);
     ESP_LOGI(TAG,"ECG:0x%x",ECG_Data);
@@ -231,8 +238,28 @@ esp_err_t MAX30003_read_FIFO_normal(MAX30003_context_t *ctx)
 esp_err_t MAX30003_read_RTOR(MAX30003_context_t *ctx)
 {
     esp_err_t ret = ESP_OK;
-    uint32_t RTOR;
+    unsigned int RTOR;
     ret = MAX30003_read(ctx,REG_RTOR,&RTOR);
     ESP_LOGI(TAG,"RTOR:0x%x",RTOR);
     return ret;
+}
+
+esp_err_t MAX30003_set_get_register(MAX30003_context_t *ctx,unsigned int reg,unsigned int value,char *NAME_REG)
+
+{
+    esp_err_t ret = ESP_OK;
+    unsigned int Temp_val = value;
+    MAX30003_write(ctx,reg,Temp_val);
+    MAX30003_read(ctx,reg,&Temp_val);
+    if(Temp_val != value){
+        ESP_LOGE(TAG,"REG %s mismatch, W:0x%x, Read:0x%x",NAME_REG,Temp_val,value);
+        ret = ESP_ERR_INVALID_RESPONSE;
+    }
+    else ESP_LOGI(TAG,"REG %s 0x%x",NAME_REG,Temp_val);
+    return ret;
+}
+
+esp_err_t MAX30003_conf_reg(MAX30003_config_register_t *cfgreg)
+{
+    return ESP_OK;
 }

@@ -55,27 +55,50 @@ void app_main(void)
     //Initialize the SPI bus
     ret = spi_bus_initialize(MAX30003_HOST, &buscfg, SPI_DMA_CH_AUTO);
     ESP_ERROR_CHECK(ret);
-    MAX30003_config_t MAX30003_config = {
+    MAX30003_config_pin_t MAX30003_config_pin = {
         .cs_io = PIN_NUM_CS,
         .host = MAX30003_HOST,
         .miso_io = PIN_NUM_MISO,
         .intb = PIN_NUM_INTB,
         .int2b = PIN_NUM_INT2B,
     };
+    CAL_t cal = {
+        .REG = REG_CAL,
+        .FCAL = CAL_FCAL_215,
+        .FIFTY = CAL_FIFTY,
+        .VCAL = CAL_EN_VCAL,
+        .VMAG = CAL_VMAG_025mV,
+        .THIGH = 0,
+    };
+    EMUX_t emux = {
+        .REG = REG_EMUX,
+        .OPENN = EMUX_OPENN,
+        .OPENP = ~EMUX_OPENP,
+        .CALN = EMUX_CALN_SEL_VCALN,
+        .CALP = EMUX_CALP_SEL_VCALP,
+    };
+    GEN_t gen = {
+        .REG = REG_GEN,
+        .ECG = ~GEN_EN_ECG,
+        .ULP_LON = GEN_EN_ULP_LON,
+        .FMSTR = GEN_FMSTR_32768_512HZ,
+        .IPOL = GEN_IPOL_ECGP_PU_ECGN_PD,
+    };
+    MAX30003_config_register_t cfgreg = {
+        .CAL = &cal,
+        .EMUX = &emux,
+        .GEN = &gen,
+    };
     gpio_install_isr_service(0);
     MAX30003_handle_t MAX30003_handle;
 
 
     ESP_LOGI(TAG, "Initializing device...");
-    ret = MAX30003_init(&MAX30003_config,&MAX30003_handle);
+    ret = MAX30003_init(&MAX30003_config_pin,&MAX30003_handle);
     if(ret == ESP_OK) ESP_LOGI(TAG,"Init done");
-    ret = MAX30003_get_revID(MAX30003_handle);
-    
-    qINTB = xQueueCreate(2,sizeof(gpio_num_t));
+    ret = MAX30003_get_info(MAX30003_handle);
+    // qINTB = xQueueCreate(2,sizeof(gpio_num_t));
     // xTaskCreate(INTB2B_cb,"INTB2B_cb",1024,NULL,3,NULL);
-    
-    MAX30003_read_FIFO_normal(MAX30003_handle);
-
     while (1) {
         // Add your main loop handling code here.
         vTaskDelay(1);
