@@ -61,7 +61,7 @@
  * 00000 to 11111 = 1 to 32, respectively (i.e. EFIT[4:0]+1 unread records)
  * EFIT[4:0] value will be set inside the code
  */
-#define MNGR_INT_EFIT_POS   BIT19 // EFIT position
+#define MNGR_INT_EFIT_POS   19 // EFIT position
 
 /**
  * @brief FAST MODE Interrupt Clear
@@ -108,16 +108,6 @@
 /** 
  * @name MANAGE GENERAL/DYNAMIC MODE
  * @brief Manages the settings of any general/dynamic modes within the device
- * 
- * FAST[1:0]
- * ECG Channel Fast Recovery Mode Selection (ECG High Pass Filter Bypass):
- * 00 = Normal Mode (Fast Recovery Mode Disabled)
- * 01 = Manual Fast Recovery Mode Enable (remains active until disabled)
- * 10 = Automatic Fast Recovery Mode Enable (Fast Recovery automatically
- * activated when/while ECG outputs are saturated, using FAST_TH).
- * 11 = Reserved. Do not use.
- * 
- * FAST_TH value will be set inside the code
  */
 #define REG_MNGR_DYN 0x05
 
@@ -129,8 +119,20 @@
  * ECG outputs are saturated, using FAST_TH)
  * 11 = Reserved. Do not use
  */
-#define MNGR_DYN_FAST_1 BIT23
-#define MNGR_DYN_FAST_0 BIT22
+#define MNGR_DYN_FAST_NORMAL (BIT22 & BIT23)
+#define MNGR_DYN_FAST_MANUAL BIT22
+#define MNGR_DYN_FAST_AUTO BIT23
+
+/**
+ * @brief Automatic Fast Recovery Threshold:
+ * If FAST[1:0] = 10 and the output of an ECG measurement exceeds the symmetric
+ * thresholds defined by 2048*FAST_TH for more than 125ms, the Fast Recovery
+ * mode will be automatically engaged and remain active for 500ms.
+ * For example, the default value (FAST_TH = 0x3F) corresponds to an ECG output
+ * upper threshold of 0x1F800, and an ECG output lower threshold of 0x20800.
+ * FAST_TH value will be set inside the code
+ */
+#define MNGR_DYN_FAST_TH_POS 16
 /**********************************************************************************/
 /** 
  * @name SOFTWARE RESET REGISTER
@@ -194,7 +196,7 @@
  * 
  */
 #define GEN_IPOL_ECGP_PD_ECGN_PU BIT11
-#define GEN_IPOL_ECGP_PU_ECGN_PD ~BIT11
+#define GEN_IPOL_ECGP_PU_ECGN_PD 0
 
 /**
  * @brief DC Lead-Off Current Magnitude Selection
@@ -205,10 +207,12 @@
  * 100 = 50nA
  * 101 = 100nA
  */
-#define GEN_IMAG_2 BIT10
-#define GEN_IMAG_1 BIT9
-#define GEN_IMAG_0 BIT8
-
+#define GEN_IMAG_0nA 0
+#define GEN_IMAG_5nA BIT8
+#define GEN_IMAG_10nA BIT9
+#define GEN_IMAG_20nA (BIT8 | BIT9)
+#define GEN_IMAG_50nA BIT10
+#define GEN_IMAG_100nA (BIT8 | BIT10)
 
 /**
  * @brief DC Lead-Off Voltage Threshold Selection
@@ -256,7 +260,7 @@
  * 0 = 0.25mV
  * 1 = 0.50mV
  */
-#define CAL_VMAG_025mV ~BIT20
+#define CAL_VMAG_025mV 0
 #define CAL_VMAG_050mV BIT20
 
 /**
@@ -295,7 +299,7 @@
  * if FMSTR[2:0] = 000,CAL_RES = 30.52µs.
  * THIGH value will be set inside the code
  */
-#define CAL_THIGH       ~BIT11
+#define CAL_THIGH       0
 
 /**********************************************************************************/
 /** 
@@ -382,7 +386,7 @@
  * @brief ECG Channel Digital High-Pass Filter Cutoff Frequency
  * 
  */
-#define ECG_DHPF_BYPASS     ~BIT14
+#define ECG_DHPF_BYPASS     0
 #define ECG_DHPF_05HZ       BIT14 // enable 0.5Hz High-Pass Filter through ECG Channel
 
 /**
@@ -497,7 +501,7 @@
  * PTFS will be set inside the code
  * Shift left value with RTOR_PTFS_POS position
  */
-#define RTOR1_PTSF_POS    BIT8
+#define RTOR1_PTSF_POS    8
 
 /**
  * @brief R to R Minimum Hold Off
@@ -509,7 +513,7 @@
  * The R to R Hold Off qualification interval is tHold_Off = MAX(tHold_Off_Min, tHold_Off_Dyn)
  * Shift left value with RTOR2_HOFF_POS position
  */
-#define RTOR2_HOFF_POS BIT16
+#define RTOR2_HOFF_POS 16
 
 /**
  * @brief R to R Interval Averaging Weight Factor
@@ -537,7 +541,7 @@
  * determined by HOFF[5:0] only 
  * Shift left value with RTOR2_RHSF_POS position
  */
-#define RTOR2_RHSF_POS BIT8
+#define RTOR2_RHSF_POS 8
 
 /**********************************************************************************/
 #define REG_ECG_BURST   0x20
@@ -722,10 +726,18 @@ esp_err_t MAX30003_read_RTOR(MAX30003_handle_t handle);
 void MAX30003_check_ETAG(unsigned int ECG_Data);
 /**********************************************************************************/
 /**
- * @brief set value of register CAL and read back and check if write and read have the same value
+ * @brief set value of register and read back and check if write and read have the same value
  *
  * @param handle Context of MAX30003 communication.
  * @param value value to send to MAX30003 and read back to check if whether mismatch read and write
  */
 esp_err_t MAX30003_set_get_register(MAX30003_handle_t handle,unsigned int reg,unsigned int value,char *NAME_REG);
+/**********************************************************************************/
+/**
+ * @brief config register of MAX30003
+ *
+ * @param cfgreg struct pointer which members are pointers to register
+ * 
+ */
+esp_err_t MAX30003_conf_reg(MAX30003_handle_t handle, MAX30003_config_register_t *cfgreg);
 #endif

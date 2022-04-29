@@ -28,7 +28,12 @@
         "charconv": "c",
         "random": "c",
         "stop_token": "c",
-        "type_traits": "c"
+        "type_traits": "c",
+        "optional": "c",
+        "system_error": "c",
+        "xlocmon": "c",
+        "xlocnum": "c",
+        "xtr1common": "c"
     },
     "idf.portWin": "COM10"
 }

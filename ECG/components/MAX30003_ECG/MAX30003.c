@@ -245,21 +245,95 @@ esp_err_t MAX30003_read_RTOR(MAX30003_context_t *ctx)
 }
 
 esp_err_t MAX30003_set_get_register(MAX30003_context_t *ctx,unsigned int reg,unsigned int value,char *NAME_REG)
-
 {
     esp_err_t ret = ESP_OK;
     unsigned int Temp_val = value;
     MAX30003_write(ctx,reg,Temp_val);
     MAX30003_read(ctx,reg,&Temp_val);
     if(Temp_val != value){
-        ESP_LOGE(TAG,"REG %s mismatch, W:0x%x, Read:0x%x",NAME_REG,Temp_val,value);
+        ESP_LOGE(TAG,"REG %s mismatch, W:0x%x, R:0x%x",NAME_REG,value,Temp_val);
         ret = ESP_ERR_INVALID_RESPONSE;
     }
-    else ESP_LOGI(TAG,"REG %s 0x%x",NAME_REG,Temp_val);
+    else ESP_LOGI(TAG,"Write %s:0x%x OK",NAME_REG,Temp_val);
     return ret;
 }
 
-esp_err_t MAX30003_conf_reg(MAX30003_config_register_t *cfgreg)
+esp_err_t MAX30003_conf_reg(MAX30003_context_t *ctx, MAX30003_config_register_t *cfgreg)
 {
+    unsigned int reg_val;
+    char *REG_NAME;
+    //Config MNGR_INT register
+    if(cfgreg->INT != NULL){
+        REG_NAME = "MNGR_INT";
+        if(cfgreg->INT->REG != REG_MNGR_INT) goto REG_ADDR_ERR;
+        MNGR_INT_t *reg = cfgreg->INT;
+        reg_val =   (reg->EFIT << MNGR_INT_EFIT_POS)  | 
+                    reg->CLR_FAST      |
+                    reg->CLR_RRINT     | 
+                    reg->CLR_SAMP      | 
+                    reg->SAMP_IT; 
+        MAX30003_set_get_register(ctx,reg->REG,reg_val,REG_NAME);
+        reg_val = 0;
+    }
+
+    //Config MNGR_DYN register
+    if(cfgreg->DYN != NULL){
+        REG_NAME = "MNGR_DYN";
+        if(cfgreg->DYN->REG != REG_MNGR_DYN) goto REG_ADDR_ERR;
+        MNGR_DYN_t *reg = cfgreg->DYN;
+        reg_val =   (reg->FAST_TH << MNGR_DYN_FAST_TH_POS)  | 
+                    reg->FAST;
+        MAX30003_set_get_register(ctx,reg->REG,reg_val,REG_NAME);
+        reg_val = 0;
+    }
+
+    //Config MNGR_DYN register
+    if(cfgreg->GEN != NULL){
+        REG_NAME = "GEN";
+        if(cfgreg->GEN->REG != REG_GEN) goto REG_ADDR_ERR;
+        GEN_t *reg = cfgreg->GEN;
+        reg_val =   reg->DCLOFF | 
+                    reg->ECG    |
+                    reg->FMSTR  |
+                    reg->IMAG   |
+                    reg->IPOL   |
+                    reg->ULP_LON;
+
+        MAX30003_set_get_register(ctx,reg->REG,reg_val,REG_NAME);
+        reg_val = 0;
+    }
+
+    //Config CAL register
+    if(cfgreg->CAL != NULL){
+        REG_NAME = "CALIB";
+        if(cfgreg->CAL->REG != REG_CAL) goto REG_ADDR_ERR;
+        CAL_t *reg = cfgreg->CAL;
+        reg_val =   reg->VCAL   | 
+                    reg->VMODE  | 
+                    reg->VMAG   | 
+                    reg->FCAL   | 
+                    reg->FIFTY  | 
+                    reg->THIGH;
+        MAX30003_set_get_register(ctx,reg->REG,reg_val,REG_NAME);
+        reg_val = 0;
+    }  
+    
+    //Config EMUX register
+    if(cfgreg->EMUX != NULL){
+        REG_NAME = "EMUX";
+        if(cfgreg->EMUX->REG != REG_EMUX) goto REG_ADDR_ERR;
+        EMUX_t *reg = cfgreg->EMUX;
+        reg_val =   reg->POL   | 
+                    reg->OPENP | 
+                    reg->OPENN | 
+                    reg->CALP  | 
+                    reg->CALN; 
+        
+        MAX30003_set_get_register(ctx,reg->REG,reg_val,REG_NAME);
+        reg_val = 0;
+    }
     return ESP_OK;
+REG_ADDR_ERR:
+    ESP_LOGE("REG","%s incorrect register address",REG_NAME);
+    return ESP_ERR_INVALID_ARG;
 }
