@@ -77,36 +77,7 @@ esp_err_t MAX30003_init(const MAX30003_config_pin_t *cfg, MAX30003_context_t** o
     };
     gpio_config(&cs_cfg);
 
-    /** 2 chân INTB và INT2B đều là output low nên phải cấu hình ngắt cạnh xuống
-     *  trở kéo lên
-     */
-    gpio_config_t intb_cfg = {
-        .pin_bit_mask = BIT(ctx->cfg.intb),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .intr_type = GPIO_INTR_NEGEDGE,
-    };
-    gpio_config(&intb_cfg);
-    gpio_config_t int2b_cfg = {
-        .pin_bit_mask = BIT(ctx->cfg.int2b),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .intr_type = GPIO_INTR_NEGEDGE,
-    };
-    gpio_config(&int2b_cfg);
-    /** 
-     *  gắn hàm xử lý ngắt vào 2 chân INTB và INT2B
-     */
-    // err = gpio_isr_handler_add(ctx->cfg.intb,INTB2B_ISR,ctx->cfg.intb);
-    // if (err != ESP_OK) {
-    //         goto cleanup;
-    //     }
-    // err = gpio_isr_handler_add(ctx->cfg.int2b,INTB2B_ISR,ctx->cfg.int2b);
-    // if (err != ESP_OK) {
-    //         goto cleanup;
-    //     }
-    // gpio_intr_enable(ctx->cfg.intb);
-    // gpio_intr_enable(ctx->cfg.int2b);
+    
     /** sau khi cấu hình xong, gửi ngược context *ctx về *out_ctx
      *  ra bên ngoài hàm để sử dụng cho mục đích khác
      */
@@ -135,6 +106,7 @@ esp_err_t MAX30003_read(MAX30003_context_t *ctx,uint8_t reg, unsigned int *out_d
     };
     spi_transaction_t *pTrans = &trans;
     spi_device_queue_trans(ctx->spi,&trans,portMAX_DELAY);
+    
     esp_err_t err = spi_device_get_trans_result(ctx->spi,&pTrans,portMAX_DELAY);
     if(err!= ESP_OK) {
         return err;
@@ -163,11 +135,6 @@ esp_err_t MAX30003_write(MAX30003_context_t *ctx,uint8_t reg, unsigned int in_da
     if(err!= ESP_OK) {
         return err;
     }
-    return ESP_OK;
-}
-
-esp_err_t MAX30003_INTB2B_callback(MAX30003_context_t *cxt)
-{
     return ESP_OK;
 }
 
@@ -228,10 +195,29 @@ void MAX30003_check_ETAG(unsigned int ECG_Data)
 esp_err_t MAX30003_read_FIFO_normal(MAX30003_context_t *ctx)
 {
     esp_err_t ret = ESP_OK;
-    unsigned int ECG_Data;
-    ret = MAX30003_read(ctx,REG_ECG_NORMAL,&ECG_Data);
-    MAX30003_check_ETAG(ECG_Data);
-    ESP_LOGI(TAG,"ECG:0x%x",ECG_Data);
+    unsigned int ECG_Data,ECG_status,ETAG[32];
+    uint16_t ECG_Sample[32],ECG_Idx;
+    MAX30003_read(ctx,REG_STATUS,&ECG_status);
+    if((ECG_status & STATUS_EINT) == STATUS_EINT){
+        ECG_Idx = 0;
+        spi_device_acquire_bus(ctx->spi,portMAX_DELAY);
+        do{
+            MAX30003_read(ctx,REG_ECG_FIFO_NORMAL,&ECG_Data);
+            ECG_Sample[ECG_Idx] = ECG_Data >> 8;
+            ETAG[ECG_Idx] = ECG_Data & ETAG_MASK;
+            ECG_Idx++;
+        }while(ETAG[ECG_Idx -1] == ETAG_VALID || ETAG[ECG_Idx -1] == ETAG_FAST);
+        spi_device_release_bus(ctx->spi);
+        ESP_LOGI("FIFO","PASS");
+        if(ETAG[ECG_Idx-1] == ETAG_OVERFLOW){
+            MAX30003_write(ctx,REG_FIFO_RST,0);
+            ESP_LOGE("FIFO","Overflow");
+            return ret;
+        }
+        // for(uint16_t i=0;i<ECG_Idx;i++){
+        //     printf("%6d \n",ECG_Sample[i]);
+        // }
+    }
     return ret;
 }
 
@@ -239,15 +225,17 @@ esp_err_t MAX30003_read_RTOR(MAX30003_context_t *ctx)
 {
     esp_err_t ret = ESP_OK;
     unsigned int RTOR;
-    ret = MAX30003_read(ctx,REG_RTOR,&RTOR);
-    ESP_LOGI(TAG,"RTOR:0x%x",RTOR);
+    ret = MAX30003_read(ctx,REG_RTOR_INTERVAL,&RTOR);
+    RTOR >>=10;
+    RTOR *= 8;
+    ESP_LOGI(TAG,"RTOR:%ums",RTOR);
     return ret;
 }
 
 esp_err_t MAX30003_set_get_register(MAX30003_context_t *ctx,unsigned int reg,unsigned int value,char *NAME_REG)
 {
     esp_err_t ret = ESP_OK;
-    unsigned int Temp_val = value;
+    unsigned int Temp_val = value; 
     MAX30003_write(ctx,reg,Temp_val);
     MAX30003_read(ctx,reg,&Temp_val);
     if(Temp_val != value){
@@ -262,11 +250,36 @@ esp_err_t MAX30003_conf_reg(MAX30003_context_t *ctx, MAX30003_config_register_t 
 {
     unsigned int reg_val;
     char *REG_NAME;
+    MAX30003_write(ctx,REG_SW_RST,0);
+    //Config EN_INT,EN_INT2 register
+    if(cfgreg->EN_INT != NULL){
+        REG_NAME = "EN_INT";
+        if( cfgreg->EN_INT->REG.REG_INTB == REG_ENINTB ||
+            cfgreg->EN_INT->REG.REG_INT2B == REG_ENINT2B) 
+            {
+                EN_INT_t *reg = cfgreg->EN_INT;
+                reg_val =   reg->E_INT      | 
+                            reg->E_OVF      |
+                            reg->E_FS       |
+                            reg->E_DCOFF    | 
+                            reg->E_LON      | 
+                            reg->E_RR       |
+                            reg->E_SAMP     |
+                            reg->E_PLL      | 
+                            reg->E_INT_TYPE ;
+                if(reg->REG.REG_INTB == REG_ENINTB) 
+                MAX30003_set_get_register(ctx,reg->REG.REG_INTB,reg_val,REG_NAME);
+                else MAX30003_set_get_register(ctx,reg->REG.REG_INT2B,reg_val,REG_NAME);
+                reg_val = 0;
+            }
+            else goto REG_ADDR_ERR;
+    }
+    
     //Config MNGR_INT register
-    if(cfgreg->INT != NULL){
+    if(cfgreg->MNGR_INT != NULL){
         REG_NAME = "MNGR_INT";
-        if(cfgreg->INT->REG != REG_MNGR_INT) goto REG_ADDR_ERR;
-        MNGR_INT_t *reg = cfgreg->INT;
+        if(cfgreg->MNGR_INT->REG != REG_MNGR_INT) goto REG_ADDR_ERR;
+        MNGR_INT_t *reg = cfgreg->MNGR_INT;
         reg_val =   (reg->EFIT << MNGR_INT_EFIT_POS)  | 
                     reg->CLR_FAST      |
                     reg->CLR_RRINT     | 
@@ -287,17 +300,22 @@ esp_err_t MAX30003_conf_reg(MAX30003_context_t *ctx, MAX30003_config_register_t 
         reg_val = 0;
     }
 
-    //Config MNGR_DYN register
+    //Config MNGR_GEN register
     if(cfgreg->GEN != NULL){
         REG_NAME = "GEN";
         if(cfgreg->GEN->REG != REG_GEN) goto REG_ADDR_ERR;
         GEN_t *reg = cfgreg->GEN;
-        reg_val =   reg->DCLOFF | 
-                    reg->ECG    |
-                    reg->FMSTR  |
-                    reg->IMAG   |
-                    reg->IPOL   |
-                    reg->ULP_LON;
+        reg_val =   reg->ULP_LON    |
+                    reg->FMSTR      |
+                    reg->ECG        |
+                    reg->DCLOFF     | 
+                    reg->IPOL       |
+                    reg->IMAG       |
+                    reg->VTH        |
+                    reg->EN_RBIAS   |
+                    reg->RBIASV     |
+                    reg->RBIASP     |
+                    reg->RBIASN     ;
 
         MAX30003_set_get_register(ctx,reg->REG,reg_val,REG_NAME);
         reg_val = 0;
@@ -332,8 +350,46 @@ esp_err_t MAX30003_conf_reg(MAX30003_context_t *ctx, MAX30003_config_register_t 
         MAX30003_set_get_register(ctx,reg->REG,reg_val,REG_NAME);
         reg_val = 0;
     }
+    
+    //Config ECG register
+    if(cfgreg->ECG != NULL){
+        REG_NAME = "ECG";
+        if(cfgreg->ECG->REG != REG_ECG) goto REG_ADDR_ERR;
+        ECG_t *reg = cfgreg->ECG;
+        reg_val =   reg->RATE | 
+                    reg->GAIN | 
+                    reg->DHPF | 
+                    reg->DLPF ; 
+        MAX30003_set_get_register(ctx,reg->REG,reg_val,REG_NAME);
+        reg_val = 0;
+    }
+    
+    //Config RTOR register
+    if(cfgreg->RTOR != NULL){
+        REG_NAME = "RTOR";
+        RTOR_t *reg = cfgreg->RTOR;
+        if(reg->REG.RTOR1 == REG_RTOR1){
+            reg_val =   reg->EN   | 
+                        reg->WNDW |
+                        reg->PAVG | 
+                        reg->PTSF | 
+                        reg->GAIN ;
+            MAX30003_set_get_register(ctx,reg->REG.RTOR1,reg_val,REG_NAME);
+        }
+        else if(reg->REG.RTOR2 == REG_RTOR2){
+            reg_val =   reg->HOFF | 
+                        reg->RAVG | 
+                        reg->RHSF ; 
+            MAX30003_set_get_register(ctx,reg->REG.RTOR2,reg_val,REG_NAME);
+        }
+        else goto REG_ADDR_ERR;
+        reg_val = 0;
+    }
+
+    MAX30003_write(ctx,REG_SYNCH_RST,0);
     return ESP_OK;
 REG_ADDR_ERR:
     ESP_LOGE("REG","%s incorrect register address",REG_NAME);
     return ESP_ERR_INVALID_ARG;
 }
+

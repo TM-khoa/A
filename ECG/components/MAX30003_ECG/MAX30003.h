@@ -103,7 +103,7 @@
 #define MNGR_INT_SAMP_IT_1      0
 #define MNGR_INT_SAMP_IT_2      1
 #define MNGR_INT_SAMP_IT_4      2
-#define MNGR_INT_SAMP_IT_16      3
+#define MNGR_INT_SAMP_IT_16     3
 /**********************************************************************************/
 /** 
  * @name MANAGE GENERAL/DYNAMIC MODE
@@ -187,7 +187,7 @@
  * Uses current sources and comparator thresholds set below.
  * 
  */
-#define GEN_EN_DCLOFF BIT12 
+#define GEN_DCLOFF_EN BIT12 
 
 /**
  * @brief DC Lead-Off Current Polarity (if current sources are enabled/connected)
@@ -221,8 +221,10 @@
  * 10 = VMID ± 450mV
  * 11 = VMID ± 500mV
  */
-#define GEN_DCLOFF_VTH_1 BIT7
-#define GEN_DCLOFF_VTH_0 BIT6
+#define GEN_DCLOFF_VTH_300mV (BIT6&BIT7)
+#define GEN_DCLOFF_VTH_400mV BIT6
+#define GEN_DCLOFF_VTH_450mV BIT7
+#define GEN_DCLOFF_VTH_500mV (BIT6|BIT7)
 
 /**
  * @brief Enable and Select Resistive Lead Bias Mode
@@ -232,6 +234,39 @@
  * 01, then EN_RBIAS[1:0] will remain set to 00
  */
 #define GEN_EN_RBIAS BIT4
+
+
+/**
+ * @brief Resistive Bias Mode Value Selection
+ * 00 = RBIAS = 50MΩ
+ * 01 = RBIAS = 100MΩ
+ * 10 = RBIAS = 200MΩ
+ * 11 = Reserved. Do not use.
+ * 
+ */
+#define GEN_RBIASV_50MOHM  (BIT3 & BIT2)
+#define GEN_RBIASV_100MOHM  BIT2
+#define GEN_RBIASV_200MOHM  BIT3
+
+/**
+ * @brief Enables Resistive Bias on Positive Input
+ * 0 = ECGP is not resistively connected to VMID
+ * 1 = ECGP is connected to VMID through a resistor (selected by RBIASV).
+ * 
+ */
+#define GEN_RBIASP_EN  BIT1
+
+/**
+ * @brief Enables Resistive Bias on Negative Input
+ * 0 = ECGN is not resistively connected to VMID
+ * 1 = ECGN is connected to VMID through a resistor (selected by RBIASV).
+ * 
+ */
+#define GEN_RBIASN_EN  BIT0
+
+
+
+
 /**********************************************************************************/
 /** 
  * @name CONFIG CALIBRATION
@@ -544,9 +579,9 @@
 #define RTOR2_RHSF_POS 8
 
 /**********************************************************************************/
-#define REG_ECG_BURST   0x20
-#define REG_ECG_NORMAL  0x21
-#define REG_RTOR        0x25
+#define REG_ECG_FIFO_BURST   0x20
+#define REG_ECG_FIFO_NORMAL  0x21
+#define REG_RTOR_INTERVAL        0x25
 
 #define ETAG_VALID      0
 #define ETAG_FAST       0b001000
@@ -556,6 +591,10 @@
 #define ETAG_OVERFLOW   0b111000
 #define ETAG_MASK       0b111000
 /**********************************************************************************/
+typedef struct MAX30003_EN_INTB2B_REG_t{
+    uint8_t REG_INTB;
+    uint8_t REG_INT2B;
+}EN_INTB2B_REG_t;
 typedef struct MAX30003_EN_INT_t{
     unsigned int  E_INT;
     unsigned int  E_OVF;
@@ -565,7 +604,8 @@ typedef struct MAX30003_EN_INT_t{
     unsigned int  E_RR;
     unsigned int  E_SAMP;
     unsigned int  E_PLL;
-    uint8_t REG;
+    unsigned int  E_INT_TYPE;
+    EN_INTB2B_REG_t REG;
 }EN_INT_t;
 typedef struct MAX30003_MNGR_INT_t{
     unsigned int EFIT;
@@ -587,6 +627,11 @@ typedef struct MAX30003_GEN_t{
     unsigned int DCLOFF;
     unsigned int IPOL;
     unsigned int IMAG;
+    unsigned int VTH;
+    unsigned int EN_RBIAS;
+    unsigned int RBIASV;
+    unsigned int RBIASP;
+    unsigned int RBIASN;
     uint8_t REG;
 }GEN_t;
 typedef struct MAX30003_CAL_t{
@@ -613,6 +658,11 @@ typedef struct MAX30003_ECG_t{
     unsigned int DLPF;
     uint8_t REG;
 }ECG_t;
+
+typedef struct MAX30003_RTOR_REG_t{
+    uint8_t RTOR1;
+    uint8_t RTOR2;
+}REG_t;
 typedef struct MAX30003_RTOR_t{
     unsigned int WNDW;
     unsigned int GAIN;
@@ -622,11 +672,11 @@ typedef struct MAX30003_RTOR_t{
     unsigned int HOFF;
     unsigned int RAVG;
     unsigned int RHSF;
-    uint8_t REG;
+    REG_t REG;
 }RTOR_t;
 typedef struct MAX30003_config_register_t{
      MNGR_DYN_t* DYN;
-     MNGR_INT_t* INT;
+     MNGR_INT_t* MNGR_INT;
      GEN_t* GEN;
      CAL_t* CAL;
      EMUX_t* EMUX;
@@ -740,4 +790,6 @@ esp_err_t MAX30003_set_get_register(MAX30003_handle_t handle,unsigned int reg,un
  * 
  */
 esp_err_t MAX30003_conf_reg(MAX30003_handle_t handle, MAX30003_config_register_t *cfgreg);
+
+void MAX30003_reset(MAX30003_handle_t handle);
 #endif
