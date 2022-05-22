@@ -143,7 +143,7 @@ esp_err_t MAX30003_get_info(MAX30003_context_t *ctx)
     esp_err_t err = ESP_OK;
     unsigned int Info=0;
     err = MAX30003_read(ctx,REG_INFO,&Info);
-    if(err != ESP_OK){
+    if(err != ESP_OK || Info == 0){
         ESP_LOGE(TAG,"Not found MAX30003",NULL);
         return err;
     }
@@ -163,7 +163,7 @@ esp_err_t MAX30003_get_info(MAX30003_context_t *ctx)
 void MAX30003_check_ETAG(unsigned int ECG_Data)
 {
     unsigned int ETAG;
-    ETAG = ECG_Data & ETAG_MASK;
+    ETAG = (ECG_Data >> 3) & ETAG_MASK;
     switch(ETAG)
     {
         case ETAG_EMPTY:
@@ -195,29 +195,27 @@ void MAX30003_check_ETAG(unsigned int ECG_Data)
 esp_err_t MAX30003_read_FIFO_normal(MAX30003_context_t *ctx)
 {
     esp_err_t ret = ESP_OK;
-    unsigned int ECG_Data,ECG_status,ETAG[32];
-    uint16_t ECG_Sample[32],ECG_Idx;
-    MAX30003_read(ctx,REG_STATUS,&ECG_status);
-    if((ECG_status & STATUS_EINT) == STATUS_EINT){
-        ECG_Idx = 0;
-        spi_device_acquire_bus(ctx->spi,portMAX_DELAY);
-        do{
-            MAX30003_read(ctx,REG_ECG_FIFO_NORMAL,&ECG_Data);
-            ECG_Sample[ECG_Idx] = ECG_Data >> 8;
-            ETAG[ECG_Idx] = ECG_Data & ETAG_MASK;
-            ECG_Idx++;
-        }while(ETAG[ECG_Idx -1] == ETAG_VALID || ETAG[ECG_Idx -1] == ETAG_FAST);
-        spi_device_release_bus(ctx->spi);
-        ESP_LOGI("FIFO","PASS");
-        if(ETAG[ECG_Idx-1] == ETAG_OVERFLOW){
-            MAX30003_write(ctx,REG_FIFO_RST,0);
-            ESP_LOGE("FIFO","Overflow");
-            return ret;
-        }
-        // for(uint16_t i=0;i<ECG_Idx;i++){
-        //     printf("%6d \n",ECG_Sample[i]);
-        // }
+    unsigned int ECG_Data,ETAG[32];
+    int16_t ECG_Sample[32],ECG_Idx=0;
+    spi_device_acquire_bus(ctx->spi,portMAX_DELAY);
+    do{
+        MAX30003_read(ctx,REG_ECG_FIFO_NORMAL,&ECG_Data);
+        ECG_Sample[ECG_Idx] = ECG_Data >> 8;
+        ETAG[ECG_Idx] = (ECG_Data >> 3) & ETAG_MASK;
+        ECG_Idx++;
+    }while(ETAG[ECG_Idx -1] == ETAG_VALID || ETAG[ECG_Idx -1] == ETAG_FAST);
+    spi_device_release_bus(ctx->spi);
+    
+    if(ETAG[ECG_Idx-1] == ETAG_OVERFLOW){
+        MAX30003_write(ctx,REG_FIFO_RST,0);
+        ESP_LOGE("FIFO","Overflow");
+        return ret;
     }
+    for(uint16_t i=0;i< ECG_Idx;i++){
+        printf("%6d\n",ECG_Sample[i]);
+
+    }
+    
     return ret;
 }
 

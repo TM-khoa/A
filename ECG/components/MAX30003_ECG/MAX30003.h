@@ -196,7 +196,7 @@
  * 
  */
 #define GEN_IPOL_ECGP_PD_ECGN_PU BIT11
-#define GEN_IPOL_ECGP_PU_ECGN_PD 0
+#define GEN_IPOL_ECGP_PU_ECGN_PD (0<<11)
 
 /**
  * @brief DC Lead-Off Current Magnitude Selection
@@ -288,14 +288,15 @@
  * 0 = Unipolar, sources swing between VMID ± VMAG and VMID
  * 1 = Bipolar, sources swing between VMID + VMAG and VMID - VMAG
  */
-#define CAL_VMODE BIT21 //Calibration Source Mode Selection
+#define CAL_VMODE_UNIPOLAR  (0<<21) //Calibration Source Mode Selection
+#define CAL_VMODE_BIPOLAR   BIT21 //Calibration Source Mode Selection
 
 /**
  * @brief Calibration Source Magnitude Selection (VMAG)
  * 0 = 0.25mV
  * 1 = 0.50mV
  */
-#define CAL_VMAG_025mV 0
+#define CAL_VMAG_025mV (0<<20)
 #define CAL_VMAG_050mV BIT20
 
 /**
@@ -421,7 +422,7 @@
  * @brief ECG Channel Digital High-Pass Filter Cutoff Frequency
  * 
  */
-#define ECG_DHPF_BYPASS     0
+#define ECG_DHPF_BYPASS     0<<14
 #define ECG_DHPF_05HZ       BIT14 // enable 0.5Hz High-Pass Filter through ECG Channel
 
 /**
@@ -584,14 +585,14 @@
 #define REG_RTOR_INTERVAL        0x25
 
 #define ETAG_VALID      0
-#define ETAG_FAST       0b001000
-#define ETAG_VALID_EOF  0b010000
-#define ETAG_FAST_EOF   0b011000
-#define ETAG_EMPTY      0b110000
-#define ETAG_OVERFLOW   0b111000
-#define ETAG_MASK       0b111000
+#define ETAG_FAST       0b001
+#define ETAG_VALID_EOF  0b010
+#define ETAG_FAST_EOF   0b011
+#define ETAG_EMPTY      0b110
+#define ETAG_OVERFLOW   0b111
+#define ETAG_MASK       0b111
 /**********************************************************************************/
-typedef struct MAX30003_EN_INTB2B_REG_t{
+typedef union MAX30003_EN_INTB2B_REG_t{
     uint8_t REG_INTB;
     uint8_t REG_INT2B;
 }EN_INTB2B_REG_t;
@@ -659,7 +660,7 @@ typedef struct MAX30003_ECG_t{
     uint8_t REG;
 }ECG_t;
 
-typedef struct MAX30003_RTOR_REG_t{
+typedef union MAX30003_RTOR_REG_t{
     uint8_t RTOR1;
     uint8_t RTOR2;
 }REG_t;
@@ -684,6 +685,18 @@ typedef struct MAX30003_config_register_t{
      RTOR_t* RTOR;
      EN_INT_t* EN_INT;
 }MAX30003_config_register_t;
+
+typedef struct MAX30003_config_register_t_2{
+     MNGR_DYN_t DYN;
+     MNGR_INT_t MNGR_INT;
+     GEN_t GEN;
+     CAL_t CAL;
+     EMUX_t EMUX;
+     ECG_t ECG;
+     RTOR_t RTOR;
+     EN_INT_t EN_INT;
+}MAX30003_config_register_t_2;
+
 typedef struct MAX30003_status_t{
     bool  EINT;
     bool  EOVF;
