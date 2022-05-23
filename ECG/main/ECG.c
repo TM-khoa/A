@@ -62,10 +62,7 @@ esp_err_t ECG_Config_register(MAX30003_handle_t handle);
 esp_err_t MAX30003Config_register_ECG_on(MAX30003_handle_t handle);
 esp_err_t MAX30003Config_register_ULP(MAX30003_handle_t handle);
 
-esp_err_t MAX30003Config_register_Spiritboi2();
-
 static void INTB_handle(void* arg);
-void PIN_BTN_ISR(void *arg);
 static void BTN_handle(void* arg);
 static void esp_check_light_sleep(void* arg);
 
@@ -79,22 +76,20 @@ void read_battery(void* pvParameter);
 void app_main(void)
 {
     gpio_install_isr_service(0);
+    SPI_init_bus();
+    MAX30003_init_device(&MAX30003_handle);
+    MAX30003_write(MAX30003_handle,REG_SW_RST,0);
     ADC1_init();
     xEvtGr1 = xEventGroupCreate();
     light_sleep_init();
-    // SPI_init_bus();
-    // MAX30003_init_device(&MAX30003_handle);
-    // MAX30003Config_register_ECG_on(MAX30003_handle);
-    MAX30003Config_register_Spiritboi2();
-    xEventGroupSetBits(xEvtGr1,EVTGR_FRESH_START);
     gpio_set_level(PIN_SIGNAL,1);
     vTaskDelay(500/portTICK_RATE_MS);
     gpio_set_level(PIN_SIGNAL,0);
     xTaskCreate(INTB_handle, "INTB_handle", 2048, NULL, 10,NULL);
-    xTaskCreate(BTN_handle, "BTN_handle", 2048, NULL, 7,NULL);
+    xTaskCreate(BTN_handle, "BTN_handle", 4096, NULL, 7,NULL);
     xTaskCreate(esp_check_light_sleep, "esp_check_light_sleep", 2048, NULL, 1, NULL);
     xTaskCreate(read_battery, "read_battery", 2048, NULL, 8, NULL);
-    
+    xEventGroupSetBits(xEvtGr1,EVTGR_FRESH_START);
     while (1) {
         vTaskDelay(500/portTICK_RATE_MS);
     }
@@ -103,11 +98,32 @@ void app_main(void)
 static void BTN_handle(void* arg)
 {
     EventBits_t xEvtVal;
+#define MAX_COUNT 3
+    uint8_t count=0;
+    uint8_t Temp=0;
     for(;;) {
         xEvtVal = xEventGroupWaitBits(xEvtGr1,EVTGR_TASK_BTN,pdTRUE,pdFALSE,portMAX_DELAY);
         if(ASSERT_BITS(xEvtVal,EVTGR_TASK_BTN)){
-            ESP_LOGI("EVT BTN","done");
+            do
+            {
+                vTaskDelay(1000/portTICK_RATE_MS);
+                Temp++;
+                ESP_LOGI("TEMP","%u",Temp);
+                if(Temp == MAX_COUNT) {Temp=0;break;}
+            } while (!gpio_get_level(PIN_BTN));
+            count = count > MAX_COUNT ? 0 : count;
+            ESP_LOGI("EVT BTN","count:%u",count++);
+            switch (count)
+            {
+            case 1:
+                MAX30003Config_register_ULP(MAX30003_handle);
+                break;
+            
+            default:
+                break;
+            }
         }
+        
     }
 }
 
@@ -116,6 +132,14 @@ static void INTB_handle(void* arg)
     EventBits_t xEvtVal;
     for(;;) {
         xEvtVal = xEventGroupWaitBits(xEvtGr1,EVTGR_TASK_INTB,pdTRUE,pdFALSE,portMAX_DELAY);
+        if(ASSERT_BITS(xEvtVal,EVTGR_TASK_INTB)){
+            unsigned int MAX_Val;
+            MAX30003_read(MAX30003_handle,REG_STATUS,&MAX_Val);
+            ESP_LOGI("MAX status","0x%x",MAX_Val);
+            if(ASSERT_BITS(MAX_Val,STATUS_LONINT)){
+                ESP_LOGI("LOINT",".");
+            }
+        }
     }
 }
 
@@ -124,7 +148,6 @@ static void INTB_handle(void* arg)
 
 static void esp_check_light_sleep(void* arg)
 {
-#ifndef INTB_USE_TRANSISTOR_BUFFER   
 EventBits_t xEvtVal;
 const EventBits_t xBitsToWaitSleep = (EVTGR_FRESH_START | EVTGR_LIGHT_SLEEP);
 const EventBits_t xBitsToWaitTaskDone = (EVTGR_TASK_BATTERY | EVTGR_TASK_BTN | EVTGR_TASK_INTB);
@@ -132,39 +155,45 @@ const EventBits_t xBitsToWaitTaskDone = (EVTGR_TASK_BATTERY | EVTGR_TASK_BTN | E
         xEvtVal = xEventGroupWaitBits(xEvtGr1,xBitsToWaitSleep,pdTRUE,pdFALSE,500/portTICK_RATE_MS);
         if(ASSERT_BITS(xEvtVal,EVTGR_LIGHT_SLEEP) || ASSERT_BITS(xEvtVal,EVTGR_FRESH_START)){
             gpio_set_level(PIN_SIGNAL,0);
+            uart_wait_tx_idle_polling(0);
             esp_light_sleep_start();
             gpio_set_level(PIN_SIGNAL,1);
+            
             xEventGroupSetBits(xEvtGr1,EVTGR_TASK_BATTERY);
             switch (esp_sleep_get_wakeup_cause()) {
             case ESP_SLEEP_WAKEUP_TIMER:
                 ESP_LOGW("LIGHTWAKE","Timeout");
+                vTaskDelay(10/portTICK_RATE_MS);
                 xEventGroupSetBits(xEvtGr1,EVTGR_LIGHT_SLEEP);
                 break;
             case ESP_SLEEP_WAKEUP_GPIO:
                 if(!gpio_get_level(PIN_BTN)){
-                    ESP_LOGI("LIGHTWAKE","BTN");
                     xEventGroupSetBits(xEvtGr1,EVTGR_TASK_BTN);
+                    ESP_LOGW("PIN_BTN",".");
                 }
-                if(!gpio_get_level(PIN_INTB)){
-                    ESP_LOGI("LIGHTWAKE","INTB");
+                if(gpio_get_level(PIN_INTB)){
+                    xEventGroupSetBits(xEvtGr1,EVTGR_TASK_INTB);
+                    ESP_LOGW("INTB",".");
                 }
                 break;
             default:
                 ESP_LOGW("LIGHTWAKE","Unknown source");
+                unsigned int MAX_Status;
+                MAX30003_read(MAX30003_handle,REG_STATUS,&MAX_Status);
                 break;
             }
+            
         }
-        xEvtVal = xEventGroupWaitBits(xEvtGr1,xBitsToWaitTaskDone,pdTRUE,pdFALSE,500/portTICK_RATE_MS); 
-        if( !ASSERT_BITS(xEvtVal,EVTGR_TASK_BATTERY) && 
-            !ASSERT_BITS(xEvtVal,EVTGR_TASK_BTN) && 
-            !ASSERT_BITS(xEvtVal,EVTGR_TASK_INTB)){
+        if( !ASSERT_BITS(xEvtVal,EVTGR_TASK_BATTERY) 
+            && !ASSERT_BITS(xEvtVal,EVTGR_TASK_BTN) 
+            && !ASSERT_BITS(xEvtVal,EVTGR_TASK_INTB)
+            // && gpio_get_level(PIN_BTN)
+            ){
             ESP_LOGI("SET BIT","Lightwake");
             xEventGroupSetBits(xEvtGr1,EVTGR_LIGHT_SLEEP);
         }
     }
-#endif
 }
-
 esp_err_t MAX30003_init_device(MAX30003_handle_t *handle)
 {
     esp_err_t ret;
@@ -177,6 +206,7 @@ esp_err_t MAX30003_init_device(MAX30003_handle_t *handle)
     ret = MAX30003_init(&MAX30003_config_pin,handle);
     if(ret == ESP_OK) ESP_LOGI(TAG,"Init done");
     ret = MAX30003_get_info(*handle);
+    
     return ret;
 }
 
@@ -266,7 +296,6 @@ esp_err_t MAX30003Config_register_ECG_on(MAX30003_handle_t handle)
 
 esp_err_t MAX30003Config_register_ULP(MAX30003_handle_t handle)
 {
-
     EN_INT_t enint = {
         .REG.REG_INTB = REG_ENINTB,
         .E_INT = NOT_USE,
@@ -277,7 +306,7 @@ esp_err_t MAX30003Config_register_ULP(MAX30003_handle_t handle)
         .E_RR =NOT_USE,
         .E_SAMP = NOT_USE,
         .E_PLL = NOT_USE,
-        .E_INT_TYPE = EN_INTB_CMOS,
+        .E_INT_TYPE = EN_INTB_OD_PU,
     };
     GEN_t gen = {   
         .REG = REG_GEN,
@@ -312,18 +341,14 @@ esp_err_t MAX30003Config_register_ULP(MAX30003_handle_t handle)
     MAX30003_config_register_t cfgreg = {
         .EN_INT = &enint,
         .GEN = &gen,
-        .CAL = &cal,
-        .EMUX = &emux,
+        // .CAL = &cal,
+        // .EMUX = &emux,
     };
     MAX30003_conf_reg(handle,&cfgreg);
     return ESP_OK;
 }
 
-void PIN_BTN_ISR(void *arg)
-{
-    BaseType_t HigherPriorityTaskWoken;
-    xEventGroupSetBitsFromISR(xEvtGr1,EVTGR_TASK_BTN,&HigherPriorityTaskWoken);
-}
+
 void light_sleep_init()
 {
     gpio_config_t io_cfg = {};
@@ -332,6 +357,7 @@ void light_sleep_init()
     gpio_config(&io_cfg);
     
     io_cfg.pin_bit_mask = BIT(PIN_BTN);
+    io_cfg.pull_up_en = GPIO_PULLUP_ENABLE;
     io_cfg.mode = GPIO_MODE_INPUT;
     gpio_config(&io_cfg);
 
@@ -342,14 +368,14 @@ void light_sleep_init()
 #elif
     io_cfg.pull_up_en = INTB_PULL_SELECT;
 #endif
-    io_cfg.intr_type = INTB_ISR_EDGE;
     gpio_config(&io_cfg);
-    gpio_isr_handler_add(PIN_BTN,PIN_BTN_ISR,NULL);
 
     gpio_wakeup_enable(PIN_BTN,GPIO_INTR_LOW_LEVEL);
     gpio_wakeup_enable(PIN_INTB,INTB_LIGHT_SLEEP_LOGIC_LEVEL);
+    
     esp_sleep_enable_timer_wakeup(5000000);
     esp_sleep_enable_gpio_wakeup();
+   
 }
 
 
@@ -406,13 +432,48 @@ void ADC1_init()
 
 
 
-esp_err_t MAX30003Config_register_Spiritboi2()
+esp_err_t MAX30003Config_register_ULP_malloc()
 {
     ESP_LOGI("Before malloc","%d",esp_get_free_heap_size()); 
     MAX30003_config_register_t_2 *cfgreg2 = (MAX30003_config_register_t_2*)malloc(sizeof(MAX30003_config_register_t_2));
     if(!cfgreg2) return ESP_ERR_NO_MEM;
     cfgreg2->EN_INT.REG.REG_INTB = REG_ENINTB;
-    cfgreg2->EN_INT.E_OVF =NOT_USE;
+    cfgreg2->EN_INT.E_LON = EN_LONINT;
+    cfgreg2->EN_INT.E_INT_TYPE = EN_INTB_CMOS;
+
+    cfgreg2->GEN.REG = REG_GEN;
+    cfgreg2->GEN.ULP_LON = GEN_EN_ULP_LON;
+    cfgreg2->GEN.FMSTR = GEN_FMSTR_32768_512HZ;
+    cfgreg2->GEN.IPOL = GEN_IPOL_ECGP_PU_ECGN_PD;
+    
+    cfgreg2->CAL.REG = REG_CAL;
+    cfgreg2->CAL.VCAL = NOT_USE;
+    cfgreg2->CAL.VMODE = CAL_VMODE_BIPOLAR;
+    cfgreg2->CAL.VMAG = CAL_VMAG_050mV;
+    cfgreg2->CAL.FCAL = NOT_USE;
+    cfgreg2->CAL.FIFTY = CAL_FIFTY;
+    cfgreg2->CAL.THIGH = NOT_USE;
+    
+    cfgreg2->EMUX.REG = REG_EMUX;
+    cfgreg2->EMUX.OPENN = NOT_USE;
+    cfgreg2->EMUX.OPENP = NOT_USE;
+    cfgreg2->EMUX.CALP = EMUX_CALP_SEL_VCALN;
+    cfgreg2->EMUX.CALN = EMUX_CALN_SEL_VCALP;
+    
+    
+    ESP_LOGI("After malloc","%d",esp_get_free_heap_size()); 
+    free(cfgreg2);
+    ESP_LOGI("After free","%d",esp_get_free_heap_size()); 
+    return ESP_OK;
+}
+
+
+esp_err_t MAX30003Config_register_ECG_on_malloc()
+{
+    ESP_LOGI("Before malloc","%d",esp_get_free_heap_size()); 
+    MAX30003_config_register_t_2 *cfgreg2 = (MAX30003_config_register_t_2*)malloc(sizeof(MAX30003_config_register_t_2));
+    if(!cfgreg2) return ESP_ERR_NO_MEM;
+    cfgreg2->EN_INT.REG.REG_INTB = REG_ENINTB;
     cfgreg2->EN_INT.E_INT = NOT_USE;
     cfgreg2->EN_INT.E_OVF = NOT_USE;
     cfgreg2->EN_INT.E_FS =NOT_USE;
@@ -422,11 +483,6 @@ esp_err_t MAX30003Config_register_Spiritboi2()
     cfgreg2->EN_INT.E_SAMP = NOT_USE;
     cfgreg2->EN_INT.E_PLL = NOT_USE;
     cfgreg2->EN_INT.E_INT_TYPE = EN_INTB_CMOS;
-
-    cfgreg2->MNGR_INT.REG = REG_MNGR_INT;
-    cfgreg2->MNGR_INT.EFIT = 0b01111; // Assert EINT w/ 4 unread samples
-    cfgreg2->MNGR_INT.CLR_RRINT = MNGR_INT_CLR_RRINT_RTOR;
-
 
     cfgreg2->GEN.REG = REG_GEN;
     cfgreg2->GEN.ULP_LON = GEN_EN_ULP_LON;

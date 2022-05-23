@@ -799,7 +799,8 @@ esp_err_t MAX30003_set_get_register(MAX30003_handle_t handle,unsigned int reg,un
 /**
  * @brief config register of MAX30003
  *
- * @param cfgreg struct pointer which members are pointers to register
+ * @param cfgreg struct pointer which members are pointers to register MAX30003
+ * @param handle Context of MAX30003 communication.
  * 
  */
 esp_err_t MAX30003_conf_reg(MAX30003_handle_t handle, MAX30003_config_register_t *cfgreg);
