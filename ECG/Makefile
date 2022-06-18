@@ -3,6 +3,6 @@
 # project subdirectory.
 #
 
-PROJECT_NAME := spi_eeprom
+PROJECT_NAME := ECG
 
 include $(IDF_PATH)/make/project.mk

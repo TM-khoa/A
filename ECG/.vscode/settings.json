@@ -33,7 +33,10 @@
         "system_error": "c",
         "xlocmon": "c",
         "xlocnum": "c",
-        "xtr1common": "c"
+        "xtr1common": "c",
+        "nvs_flash.h": "c",
+        "esp_log.h": "c",
+        "ble.h": "c"
     },
-    "idf.portWin": "COM10"
+    "idf.portWin": "COM7"
 }

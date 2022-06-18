@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include <sys/param.h>
 #include "sdkconfig.h"
+
 static const char TAG[] = "MAX30003";
 /// Context (config and data) of MAX30003
 struct MAX30003_context_t{
@@ -143,20 +144,7 @@ esp_err_t MAX30003_get_info(MAX30003_context_t *ctx)
     esp_err_t err = ESP_OK;
     unsigned int Info=0;
     err = MAX30003_read(ctx,REG_INFO,&Info);
-    if(err != ESP_OK || Info == 0){
-        ESP_LOGE(TAG,"Not found MAX30003",NULL);
-        return err;
-    }
-    else{
-        if(Info & (5 << 20)){
-            ESP_LOGI(TAG,"Found MAX30003, INFO: 0x%x ,revision ID: 0x%x",Info, (Info & RevisionID));
-            
-        }
-        else{
-            ESP_LOGW(TAG,"Respond but uncorrect pattern: 0x%x",Info);
-            err = ESP_ERR_INVALID_RESPONSE;
-        }
-    }
+    ESP_LOGI(TAG,"INFO: 0x%x",Info);
     return err;
 }
 
@@ -205,6 +193,7 @@ esp_err_t MAX30003_read_FIFO_normal(MAX30003_context_t *ctx)
         ECG_Idx++;
     }while(ETAG[ECG_Idx -1] == ETAG_VALID || ETAG[ECG_Idx -1] == ETAG_FAST);
     spi_device_release_bus(ctx->spi);
+    // ESP_LOGI("ECG_idx","%d",ECG_Idx);
     
     if(ETAG[ECG_Idx-1] == ETAG_OVERFLOW){
         MAX30003_write(ctx,REG_FIFO_RST,0);
@@ -213,20 +202,19 @@ esp_err_t MAX30003_read_FIFO_normal(MAX30003_context_t *ctx)
     }
     for(uint16_t i=0;i< ECG_Idx;i++){
         printf("%6d\n",ECG_Sample[i]);
-
     }
     
     return ret;
 }
 
-esp_err_t MAX30003_read_RTOR(MAX30003_context_t *ctx)
+esp_err_t MAX30003_read_RTOR(MAX30003_context_t *ctx, unsigned int *RTOR)
 {
     esp_err_t ret = ESP_OK;
-    unsigned int RTOR;
-    ret = MAX30003_read(ctx,REG_RTOR_INTERVAL,&RTOR);
-    RTOR >>=10;
-    RTOR *= 8;
-    ESP_LOGI(TAG,"RTOR:%ums",RTOR);
+    ret = MAX30003_read(ctx,REG_RTOR_INTERVAL,RTOR);
+    *RTOR = *RTOR >> 10;
+    float hr =  60 /((float)(*RTOR)*0.0078125);
+    unsigned int RR = (unsigned int)(*RTOR)*(7.8125);
+    printf("HR:%.2f, RR:%u \n",hr,RR);
     return ret;
 }
 

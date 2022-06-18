@@ -6,6 +6,7 @@
 #include "esp_bit_defs.h"
 #include "driver/gpio.h"
 #include "sdkconfig.h"
+
 /**********************************************************************************/
 /**
  * @name STATUS REGISTER
@@ -350,7 +351,7 @@
  * 0 = Non-inverted
  * 1 = Inverted
  */
-#define EMUX_POL   BIT23 //ECG Input Polarity Selection (1 = Inverted) 
+#define EMUX_POL_INVERTED   BIT23 //ECG Input Polarity Selection (1 = Inverted) 
 
 /**
  * @brief Open the ECGP Input Switch (most often used for testing and calibration studies)
@@ -778,8 +779,10 @@ esp_err_t MAX30003_read_FIFO_normal(MAX30003_handle_t handle);
  * @brief Read RTOR 
  *
  * @param handle Context of MAX30003 communication.
+ * @param RTOR address that contain value of RTOR
  */
-esp_err_t MAX30003_read_RTOR(MAX30003_handle_t handle);
+esp_err_t MAX30003_read_RTOR(MAX30003_handle_t handle, unsigned int *RTOR);
+
 /**********************************************************************************/
 /**
  * @brief check ETAG status
