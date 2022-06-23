@@ -23,8 +23,8 @@ enum
     BATServiceIdx = 0,
     
     // gán số thứ tự bắt buộc
-    BATLevelIdx = 1, // Characteristic Battery Level index
-    BATLevelValIdx = 2, // Value of Characteristic Battery Level index
+    BATCharLevelIdx = 1, // Characteristic Battery Level index
+    BATCharLevelValIdx = 2, // Value of Characteristic Battery Level index
     BATCCCIdx = 3, // Characteristic Client Configuration index, 
 
     BATTotalIdx = 4, // Total number of index of GATTS table

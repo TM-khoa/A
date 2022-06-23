@@ -74,6 +74,6 @@ typedef struct BLE_server_common_obj_t {
 }BLE_server_common_obj_t;
 
 void BLE_init();
-void BLE_enable();
-void BLE_disable();
+esp_err_t BLE_enable();
+esp_err_t BLE_disable();
 #endif

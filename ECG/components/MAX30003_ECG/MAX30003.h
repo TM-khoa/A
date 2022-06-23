@@ -781,7 +781,7 @@ esp_err_t MAX30003_read_FIFO_normal(MAX30003_handle_t handle);
  * @param handle Context of MAX30003 communication.
  * @param RTOR address that contain value of RTOR
  */
-esp_err_t MAX30003_read_RTOR(MAX30003_handle_t handle, unsigned int *RTOR);
+esp_err_t MAX30003_read_RRHR(MAX30003_handle_t handle, uint8_t *hr, unsigned int *RR);
 
 /**********************************************************************************/
 /**

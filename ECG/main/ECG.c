@@ -41,33 +41,40 @@
 #define BLE_INDICATE_EN 2
 #define BLE_NOTIFY_INDICATE_DISABLE 0
 
-#define BAT_SAMPLE_TIME     25*1000000 
-#define SLEEP_TIME          10*1000000
-#define BLE_WAIT_CONNECT_TIMEOUT    10*1000000
+#define BAT_SAMPLE_TIMEOUT           9*1000 
+#define BLE_WAIT_CONNECT_TIMEOUT    10*1000
+#define MAX_DCLOFF_TIMEOUT          10*1000
 
-#define EVTGR_TASK_INTB         (1 << 0)
-#define EVTGR_TASK_BTN          (1 << 1)
-#define EVTGR_TASK_BATTERY      (1 << 2)
-#define EVTGR_LIGHT_SLEEP       (1 << 3)
-#define EVTGR_FRESH_START       (1 << 4)
-#define EVTGR_BLE_CONNECTED     (1 << 5)
-#define EVTGR_BLE_ENABLE        (1 << 6)
+#define SLEEP_TIME                  20*1000000
 
+#define EVTB_TASK_INTB              (1 << 0)
+#define EVTB_TASK_BTN               (1 << 1)
+#define EVTB_TASK_BATTERY           (1 << 2)
+#define EVTB_LIGHT_SLEEP            (1 << 3)
 
-#define EVTGR_MAX_NO_DCLOFF     (1 << 0)
-#define EVTGR_MAX_LONINT        (1 << 1)
-#define EVTGR_MAX_CHECK_TIMEOUT (1 << 2)
+#define EVTB_BLE_CONNECTED          (1 << 4)
+#define EVTB_BLE_ENABLE             (1 << 5) 
+#define EVTB_BLE_BAT_SEND_NOTIFY    (1 << 6) 
+#define EVTB_BLE_HR_SEND_NOTIFY     (1 << 7) 
+
+#define EVTB_MAX_LONINT             (1 << 8)
+#define EVTB_MAX_CHECK_TIMEOUT      (1 << 9)
+
 static const char TAG[] = "main";
 
+xQueueHandle qBATLevel,qHR;
 EventGroupHandle_t xEvtGr1,xEvtGrMAX30003;
 static esp_adc_cal_characteristics_t adc1_chars;
 MAX30003_handle_t MAX30003_handle;
 
+
 extern BLE_server_common_obj_t BSCO;
 extern indicate_notify_t ind_nof_HR,ind_nof_BAT;
 uint8_t HR_data_test[2]={0};
-uint64_t t_BLE=0;
-int64_t t_BAT=0;
+uint8_t BAT_data_test[2]={0};
+uint32_t t_BLE=0;
+uint32_t t_BAT=0;
+uint32_t t_MAX=0;
 // Funtion Prototype *************************************************************
 esp_err_t SPI_init_bus();
 esp_err_t MAX30003_init_device(MAX30003_handle_t *handle);
@@ -88,107 +95,120 @@ void light_sleep_init();
 void ADC1_init();
 void read_battery(void* pvParameter);
 
-bool check_timeout(uint64_t *t,uint64_t interval,char *log);
-
+bool check_timeout_ms(uint32_t *t,uint32_t interval,char *log);
+void BLE_notify_indicate_handle();
 
 // Funtion Prototype *************************************************************
 void app_main(void)
 {
-    BLE_init();
     ind_nof_HR.value_len = sizeof(HR_data_test);
     ind_nof_HR.value = HR_data_test;
+    ind_nof_BAT.value_len = sizeof(BAT_data_test);
+    ind_nof_BAT.value = BAT_data_test;
+    qBATLevel = xQueueCreate(1,sizeof(uint8_t));
+    qHR = xQueueCreate(4,sizeof(uint8_t));
+    gpio_install_isr_service(0);
+    BLE_init();
     pin_init();
-    // gpio_install_isr_service(0);
-    // SPI_init_bus();
-    // MAX30003_init_device(&MAX30003_handle);
-    // MAX30003_write(MAX30003_handle,REG_SW_RST,0);
-    // ADC1_init();
-    // xEvtGr1 = xEventGroupCreate();
-    // xEvtGrMAX30003 = xEventGroupCreate();
-    // light_sleep_init();
-    // gpio_set_level(PIN_SIGNAL,1);
-    // vTaskDelay(500/portTICK_RATE_MS);
-    // gpio_set_level(PIN_SIGNAL,0);
-    // xTaskCreate(INTB_handle, "INTB_handle", 4096, NULL, 10,NULL);
-    // xTaskCreate(BTN_handle, "BTN_handle", 4096, NULL, 8,NULL);
-    // xTaskCreate(esp_check_light_sleep, "esp_check_light_sleep", 2048, NULL, 1, NULL);
-    // xTaskCreate(read_battery, "read_battery", 2048, NULL, 7, NULL);
-    // xEventGroupSetBits(xEvtGr1,EVTGR_FRESH_START);
-    if(BSCO.isBLEEnable) xEventGroupSetBits(xEvtGr1,EVTGR_BLE_ENABLE);
+    SPI_init_bus();
+    MAX30003_init_device(&MAX30003_handle);
+    MAX30003_write(MAX30003_handle,REG_SW_RST,0);
+    ADC1_init();
+    xEvtGr1 = xEventGroupCreate();
+    xEvtGrMAX30003 = xEventGroupCreate();
+    light_sleep_init();
+    gpio_set_level(PIN_SIGNAL,1);
+    vTaskDelay(500/portTICK_RATE_MS);
+    gpio_set_level(PIN_SIGNAL,0);
+    xTaskCreate(INTB_handle, "INTB_handle", 4096, NULL, 10,NULL);
+    xTaskCreate(BTN_handle, "BTN_handle", 4096, NULL, 8,NULL);
+    xTaskCreate(esp_check_light_sleep, "esp_check_light_sleep", 4096, NULL, 1, NULL);
+    xTaskCreate(read_battery, "read_battery", 2048, NULL, 7, NULL);
+    if(BSCO.isBLEEnable) xEventGroupSetBits(xEvtGr1,EVTB_BLE_ENABLE);
     while (1) {
-        if(ind_nof_HR.mode == BLE_NOTIFY_EN){
-            *(ind_nof_HR.value+1) +=1;
-            esp_ble_gatts_send_indicate(ind_nof_HR.gatt_if,
-                                         ind_nof_HR.conn_id,
-                                         ind_nof_HR.attr_handle,
-                                         ind_nof_HR.value_len,
-                                         ind_nof_HR.value,
-                                         ind_nof_HR.need_confirm);
-        }
         
-        vTaskDelay(1000/portTICK_RATE_MS);
+        // ESP_LOGI("while",".");
+        vTaskDelay(500/portTICK_RATE_MS);
     }
 }
 
 static void BTN_handle(void* arg)
 {
     EventBits_t xEvtBVal;
-#define MAX_COUNT 2
+#define MAX_COUNT 1
     uint8_t count=0;
     for(;;) {
-        xEvtBVal = xEventGroupWaitBits(xEvtGr1,EVTGR_TASK_BTN,pdFALSE,pdFALSE,portMAX_DELAY);
-        if(ASSERT_BITS(xEvtBVal,EVTGR_TASK_BTN)){
-            count = count > MAX_COUNT ? 0 : count;
-            ESP_LOGW("EVT BTN","cnt:%u",++count);
-            switch (count)
-            {
-            case 1:
-                MAX30003Config_register_ULP(MAX30003_handle);
-                break;
-            case 2:
-                break;
+        xEvtBVal = xEventGroupWaitBits(xEvtGr1,EVTB_TASK_BTN,pdFALSE,pdFALSE,portMAX_DELAY);
+        if(ASSERT_BITS(xEvtBVal,EVTB_TASK_BTN)){
             
-            default:
-                break;
-            }
             while(gpio_get_level(PIN_BTN)==0){
                 ESP_LOGI("Waiting",".");
-                vTaskDelay(20/portTICK_RATE_MS);
+                vTaskDelay(500/portTICK_RATE_MS);
             }
-            xEventGroupClearBits(xEvtGr1,EVTGR_TASK_BTN);
+            gpio_set_level(PIN_SIGNAL,1);
+            ESP_LOGW("EVT BTN","cnt:%u",++count);
+            if(ASSERT_BITS(xEvtBVal,EVTB_BLE_CONNECTED)) {
+                MAX30003Config_register_ULP(MAX30003_handle);
+                
+                ESP_LOGI("BTN","MAX ULP");
+            }
+            else if(!ASSERT_BITS(xEvtBVal,EVTB_BLE_ENABLE)) {
+                BLE_enable();
+                xEventGroupSetBits(xEvtGr1,EVTB_BLE_ENABLE);
+                ESP_LOGI("BTN","BLE");
+            }
+            vTaskDelay(10/portTICK_RATE_MS);
+            gpio_set_level(PIN_SIGNAL,0);
+            xEventGroupClearBits(xEvtGr1,EVTB_TASK_BTN);
         }
     }
 }
 
 static void INTB_handle(void* arg)
 {
-#define LOINT_DEBOUNCE 40
+#define LOINT_DEBOUNCE 10
     EventBits_t xEvtBVal;
     uint8_t count = 0;
     bool enECG = false;
     for(;;) {
-        xEvtBVal = xEventGroupWaitBits(xEvtGr1,EVTGR_TASK_INTB,pdFALSE,pdFALSE,portMAX_DELAY);
-        if(ASSERT_BITS(xEvtBVal,EVTGR_TASK_INTB)){
-            unsigned int MAX_Val;
-             unsigned int RTOR;
+        xEvtBVal = xEventGroupWaitBits(xEvtGr1, EVTB_TASK_INTB, 
+                                                pdFALSE,
+                                                pdFALSE,
+                                                portMAX_DELAY);
+        if(ASSERT_BITS(xEvtBVal,EVTB_TASK_INTB)){
+            unsigned int MAX_Val=0;
+            unsigned int RR = 0;
+            
             do
             {
                 MAX30003_read(MAX30003_handle,REG_STATUS,&MAX_Val);
-                if(ASSERT_BITS(MAX_Val,STATUS_LONINT)){
+                // ESP_LOGI("MAX_STATUS","0x%x",MAX_Val);
+                if(ASSERT_BITS(MAX_Val,STATUS_LONINT)
+                && !enECG
+                ){
                     count ++;
+                    t_MAX = 0;
                     if(count >= LOINT_DEBOUNCE){
                         count = 0;
                         enECG = true;
+                        gpio_set_level(PIN_SIGNAL,1);
                     }
                     if(enECG){
-                        enECG = false;
                         ESP_LOGI("LOINT",".");
-                        xEventGroupSetBits(xEvtGrMAX30003,EVTGR_MAX_LONINT);
+                        xEventGroupSetBits(xEvtGr1,EVTB_MAX_LONINT);
+                        xEvtBVal = xEventGroupGetBits(xEvtGr1);
                         MAX30003Config_register_ECG_on(MAX30003_handle);
+                        
                     }
                 }
-                else if(!ASSERT_BITS(MAX_Val,STATUS_DCLOFF_INT)){
-                    xEventGroupSetBits(xEvtGrMAX30003,EVTGR_MAX_NO_DCLOFF);
+                else if(!ASSERT_BITS(MAX_Val,STATUS_DCLOFF_INT)
+                && !ASSERT_BITS(MAX_Val,STATUS_LONINT)
+                ){
+                    enECG = false;  
+                    t_MAX = 0;
+                    gpio_set_level(PIN_SIGNAL,1);
+                    xEventGroupClearBits(xEvtGr1,EVTB_MAX_LONINT);
+                    // ESP_LOGI("DCLOFF","0x%x",xEvtBVal);
                     if(ASSERT_BITS(MAX_Val,STATUS_EOVF)){
                         MAX30003_write(MAX30003_handle,REG_FIFO_RST,0);
                     }
@@ -197,26 +217,34 @@ static void INTB_handle(void* arg)
                     }
                 }
                 else if(ASSERT_BITS(MAX_Val,STATUS_RRINT)){
-                    MAX30003_read_RTOR(MAX30003_handle,&RTOR);
+                    if(MAX30003_read_RRHR(MAX30003_handle,&*(ind_nof_HR.value+1),&RR) == ESP_OK){
+                        xEventGroupSetBits(xEvtGr1,EVTB_BLE_HR_SEND_NOTIFY);
+                    }
                 }
                 else{
-                    // MAX30003Config_register_ULP(MAX30003_handle);
+                    // ESP_LOGI("INTB","check timeout");
+                    if(check_timeout_ms(&t_MAX,MAX_DCLOFF_TIMEOUT,"DCLOFF TIMEOUT")){
+                        MAX30003_write(MAX30003_handle,REG_SW_RST,0);
+                        gpio_set_level(PIN_SIGNAL,1);
+                        vTaskDelay(3000/portTICK_RATE_MS);
+                        gpio_set_level(PIN_SIGNAL,0);
+                    }
+                    break;
                 }
             } while (gpio_get_level(PIN_INTB));
+            gpio_set_level(PIN_SIGNAL,0);
+            xEventGroupClearBits(xEvtGr1,EVTB_TASK_INTB);
         }
-        xEventGroupClearBits(xEvtGr1,EVTGR_TASK_INTB);
     }
 }
 
 static void esp_check_light_sleep(void* arg)
 {
 EventBits_t xEvtBVal;
-const EventBits_t xBitsToWaitSleep = (EVTGR_FRESH_START | EVTGR_LIGHT_SLEEP);
     for(;;) {
-        
-        xEvtBVal = xEventGroupWaitBits(xEvtGr1,xBitsToWaitSleep,pdTRUE,pdFALSE,100/portTICK_RATE_MS);
-        if(ASSERT_BITS(xEvtBVal,EVTGR_LIGHT_SLEEP) 
-        || ASSERT_BITS(xEvtBVal,EVTGR_FRESH_START)
+        // không được cho TicktoWait = 0 vì sẽ check liên tục trong hàm này dẫn tới watchdog timer
+        xEvtBVal = xEventGroupWaitBits(xEvtGr1,EVTB_LIGHT_SLEEP,pdTRUE,pdFALSE,10/portTICK_RATE_MS);
+        if(ASSERT_BITS(xEvtBVal,EVTB_LIGHT_SLEEP)
         ){
             gpio_set_level(PIN_SIGNAL,0);
             uart_wait_tx_idle_polling(0);
@@ -232,47 +260,179 @@ const EventBits_t xBitsToWaitSleep = (EVTGR_FRESH_START | EVTGR_LIGHT_SLEEP);
                 }
                 case ESP_SLEEP_WAKEUP_GPIO:{
                     if(!gpio_get_level(PIN_BTN)){
-                        xEventGroupSetBits(xEvtGr1,EVTGR_TASK_BTN);
-                        ESP_LOGW("PIN_BTN",".");
+                        xEventGroupSetBits(xEvtGr1,EVTB_TASK_BTN);
                     }
-                    if(gpio_get_level(PIN_INTB)){
-                        xEventGroupSetBits(xEvtGr1,EVTGR_TASK_INTB);
-                        
-                    }
+                    // if(gpio_get_level(PIN_INTB)){
+                    //     xEventGroupSetBits(xEvtGr1,EVTB_TASK_INTB);
+                    // }
                     break;
                 }
                 default:{
-                    ESP_LOGW("LIGHTWAKE","Unknown source");
-                    MAX30003_write(MAX30003_handle,REG_SW_RST,0);
-                    xEventGroupSetBits(xEvtGr1,EVTGR_TASK_INTB);
-                    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
                     break;
                 }
             }
         }
-
+        xEvtBVal = xEventGroupGetBits(xEvtGr1);
         if(BSCO.isBLEEnable && !BSCO.isConnected){
+            xEventGroupClearBits(xEvtGr1,EVTB_BLE_CONNECTED);
             gpio_set_level(PIN_SIGNAL,1);
             vTaskDelay(100/portTICK_RATE_MS);
             gpio_set_level(PIN_SIGNAL,0);
             vTaskDelay(100/portTICK_RATE_MS);
-            if(check_timeout(t_BLE,BLE_WAIT_CONNECT_TIMEOUT,"BLE_CONN")){
+            if(check_timeout_ms(&t_BLE,BLE_WAIT_CONNECT_TIMEOUT,"BLE_CONN_TIMEOUT")){
+                gpio_set_level(PIN_SIGNAL,0);
+                xEventGroupClearBits(xEvtGr1,EVTB_BLE_ENABLE);
                 BLE_disable();
-                xEventGroupClearBits(xEvtGr1,EVTGR_BLE_ENABLE);
             }
-        } else {
-            if(check_timeout(&t_BAT,BAT_SAMPLE_TIME,"BAT_LEVEL")){
-            xEventGroupSetBits(xEvtGr1,EVTGR_TASK_BATTERY);
+        } else if(BSCO.isBLEEnable && BSCO.isConnected){
+            t_BLE = 0;
+
+            if(!ASSERT_BITS(xEvtBVal,EVTB_BLE_CONNECTED))
+            xEventGroupSetBits(xEvtGr1,EVTB_BLE_CONNECTED);
+
+            if(check_timeout_ms(&t_BAT,BAT_SAMPLE_TIMEOUT,"BAT_LEVEL_CHECK"))
+            xEventGroupSetBits(xEvtGr1,EVTB_TASK_BATTERY);
+            
+            BLE_notify_indicate_handle();
+
+            if(gpio_get_level(PIN_INTB)
+            && !ASSERT_BITS(xEvtBVal,EVTB_TASK_INTB)
+            && !ASSERT_BITS(xEvtBVal,EVTB_LIGHT_SLEEP)
+            ){
+                // ESP_LOGI("INTB",":1");
+                vTaskDelay(10/portTICK_RATE_MS);
+                xEventGroupSetBits(xEvtGr1,EVTB_TASK_INTB);
+            }
+            // khi kết nối bluetooth, không thể sleep để wakeup bằng nút nhấn nên phải dùng cách này
+            if(!gpio_get_level(PIN_BTN)
+            && !ASSERT_BITS(xEvtBVal,EVTB_TASK_BTN)
+            && !ASSERT_BITS(xEvtBVal,EVTB_LIGHT_SLEEP)
+            ){
+                xEventGroupSetBits(xEvtGr1,EVTB_TASK_BTN);
+                
             }
         }
-        if(    !ASSERT_BITS(xEvtBVal,EVTGR_TASK_BATTERY) 
-            && !ASSERT_BITS(xEvtBVal,EVTGR_TASK_BTN) 
-            && !ASSERT_BITS(xEvtBVal,EVTGR_TASK_INTB)
-            && !ASSERT_BITS(xEvtBVal,EVTGR_BLE_ENABLE)
+        if(    !ASSERT_BITS(xEvtBVal,EVTB_TASK_BATTERY) 
+            && !ASSERT_BITS(xEvtBVal,EVTB_TASK_BTN) 
+            && !ASSERT_BITS(xEvtBVal,EVTB_TASK_INTB)
+            && !ASSERT_BITS(xEvtBVal,EVTB_BLE_ENABLE)
                 ){
-                xEventGroupSetBits(xEvtGr1,EVTGR_LIGHT_SLEEP);
+                // ESP_LOGI("SLEEP","0x%x",xEvtBVal);
+                xEventGroupSetBits(xEvtGr1,EVTB_LIGHT_SLEEP);
             }
     }
+}
+
+void read_battery(void* pvParameter)
+{
+#define NUM_OF_SAMPLES 25
+#define BATT_LEVEL_OFFSET 3
+    EventBits_t xEvtBVal;
+    for(;;){
+        int adc_raw=0;
+        unsigned int voltage = 0;
+        uint8_t bat_percent=0;
+        xEvtBVal = xEventGroupWaitBits(xEvtGr1,EVTB_TASK_BATTERY,pdTRUE,pdFALSE,portMAX_DELAY);
+        if(ASSERT_BITS(xEvtBVal,EVTB_TASK_BATTERY)){
+            for(uint8_t i=0;i<NUM_OF_SAMPLES;i++){
+                adc_raw += adc1_get_raw(ADC1_CHANNEL_4);
+            }
+            voltage = esp_adc_cal_raw_to_voltage(adc_raw/NUM_OF_SAMPLES,&adc1_chars);
+            bat_percent = (((float)voltage*2 - BAT_MIN_VOLT)/(BAT_MAX_VOLT-BAT_MIN_VOLT))*100;
+            *(ind_nof_BAT.value) = bat_percent;
+            xEventGroupSetBits(xEvtGr1,EVTB_BLE_BAT_SEND_NOTIFY);
+            ESP_LOGI("BatPercent", "%u%%", bat_percent);
+        }
+    }
+}
+
+void BLE_notify_indicate_handle()
+{
+    EventBits_t xEvtBVal;
+    xEvtBVal = xEventGroupWaitBits(xEvtGr1, EVTB_BLE_BAT_SEND_NOTIFY 
+                                            | EVTB_BLE_HR_SEND_NOTIFY
+                                            ,pdTRUE,pdFALSE,0);
+    if( ind_nof_HR.mode == BLE_NOTIFY_EN
+        && ASSERT_BITS(xEvtBVal,EVTB_BLE_HR_SEND_NOTIFY)
+    ){
+        esp_ble_gatts_send_indicate(ind_nof_HR.gatt_if,
+                                        ind_nof_HR.conn_id,
+                                        ind_nof_HR.attr_handle,
+                                        ind_nof_HR.value_len,
+                                        ind_nof_HR.value,
+                                        ind_nof_HR.need_confirm);
+    }
+
+    if (ind_nof_BAT.mode == BLE_NOTIFY_EN 
+        && ASSERT_BITS(xEvtBVal,EVTB_BLE_BAT_SEND_NOTIFY)
+    ){
+        esp_ble_gatts_send_indicate(ind_nof_BAT.gatt_if,
+                                    ind_nof_BAT.conn_id,
+                                    ind_nof_BAT.attr_handle,
+                                    ind_nof_BAT.value_len,
+                                    ind_nof_BAT.value,
+                                    ind_nof_BAT.need_confirm);
+    }
+}
+
+bool check_timeout_ms(uint32_t *t,uint32_t interval,char* log)
+{
+#define TIME_SCALE 1000
+    if(!*t) *t = (uint32_t)(esp_timer_get_time()/TIME_SCALE);
+    if(esp_timer_get_time()/TIME_SCALE - *t >= interval){
+        ESP_LOGW("TIMEOUT","%s after %u ms",log,(uint16_t)(esp_timer_get_time()/TIME_SCALE - *t));
+        *t=0;
+        return true;
+    }
+    return false;
+}
+
+
+
+
+
+
+
+void light_sleep_init()
+{
+    gpio_wakeup_enable(PIN_BTN,GPIO_INTR_LOW_LEVEL);
+    // gpio_wakeup_enable(PIN_INTB,GPIO_INTR_HIGH_LEVEL);
+    esp_sleep_enable_timer_wakeup(SLEEP_TIME);
+    esp_sleep_enable_gpio_wakeup();
+}
+
+void pin_init()
+{
+    gpio_config_t io_cfg = {};
+    io_cfg.pin_bit_mask = BIT(PIN_SIGNAL);
+    io_cfg.mode = GPIO_MODE_OUTPUT;
+    gpio_config(&io_cfg);
+    
+    io_cfg.pin_bit_mask = BIT(PIN_BTN);
+    io_cfg.pull_up_en = GPIO_PULLUP_ENABLE;
+    io_cfg.mode = GPIO_MODE_INPUT;
+    gpio_config(&io_cfg);
+
+    io_cfg.pin_bit_mask = BIT(PIN_INTB);
+    io_cfg.mode = GPIO_MODE_INPUT;
+    gpio_config(&io_cfg);
+}
+
+void ADC1_init()
+{
+    esp_err_t ret;
+    ret = esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP);
+    if (ret == ESP_ERR_NOT_SUPPORTED) {
+        ESP_LOGW(TAG, "Calibration scheme not supported, skip software calibration");
+    } else if (ret == ESP_ERR_INVALID_VERSION) {
+        ESP_LOGW(TAG, "eFuse not burnt, skip software calibration");
+    } else if (ret == ESP_OK) {
+        esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_DEFAULT, 0, &adc1_chars);
+    } else {
+        ESP_LOGE(TAG, "Invalid arg");
+    }
+    ESP_ERROR_CHECK(adc1_config_width(ADC_WIDTH_BIT_DEFAULT));
+    ESP_ERROR_CHECK(adc1_config_channel_atten(ADC1_CHANNEL_4, ADC_ATTEN_DB_11));
 }
 
 esp_err_t MAX30003_init_device(MAX30003_handle_t *handle)
@@ -314,10 +474,10 @@ esp_err_t MAX30003Config_register_ECG_on(MAX30003_handle_t handle)
         .REG.REG_INTB = REG_ENINTB,
         .E_INT = EN_EINT,
         .E_OVF = EN_EINT,
-        .E_FS =NOT_USE,
+        .E_FS = NOT_USE,
         .E_DCOFF = EN_DCLOFFINT,
         .E_LON = NOT_USE,
-        .E_RR =EN_RRINT,
+        .E_RR = EN_RRINT,
         .E_SAMP = NOT_USE,
         .E_PLL = NOT_USE,
         .E_INT_TYPE = EN_INTB_OD_PU,
@@ -367,7 +527,7 @@ esp_err_t MAX30003Config_register_ECG_on(MAX30003_handle_t handle)
         .REG.RTOR1 = REG_RTOR1,
         .WNDW = RTOR1_WNDW_12,
         .GAIN = RTOR1_GAIN_AUTO,
-        .EN = NOT_USE,
+        .EN = RTOR1_EN_RTOR,
         .PAVG = 0,
         .PTSF = (BIT10 | BIT9),
     };
@@ -407,10 +567,10 @@ esp_err_t MAX30003Config_register_ULP(MAX30003_handle_t handle)
         .ECG = NOT_USE,
         .DCLOFF = NOT_USE,
         .IPOL = GEN_IPOL_ECGP_PU_ECGN_PD,
-        .IMAG = GEN_IMAG_100nA,
+        .IMAG = GEN_IMAG_5nA,
         .VTH = GEN_DCLOFF_VTH_300mV,
         .EN_RBIAS = NOT_USE,
-        .RBIASV = GEN_RBIASV_200MOHM,
+        .RBIASV = GEN_RBIASV_100MOHM,
         .RBIASP = GEN_RBIASP_EN,
         .RBIASN = GEN_RBIASN_EN,
     };
@@ -419,7 +579,7 @@ esp_err_t MAX30003Config_register_ULP(MAX30003_handle_t handle)
         .REG = REG_CAL,
         .VCAL = CAL_EN_VCAL,
         .VMODE = CAL_VMODE_BIPOLAR,
-        .VMAG = CAL_VMAG_050mV,
+        .VMAG = CAL_VMAG_025mV,
         .FCAL = NOT_USE,
         .FIFTY = CAL_FIFTY,
         .THIGH = NOT_USE,
@@ -440,85 +600,6 @@ esp_err_t MAX30003Config_register_ULP(MAX30003_handle_t handle)
     MAX30003_conf_reg(handle,&cfgreg);
     return ESP_OK;
 }
-
-bool check_timeout(uint64_t *t,uint64_t interval,char* log)
-{
-    if(!*t) *t = esp_timer_get_time();
-    if(esp_timer_get_time() - *t >= interval){
-        ESP_LOGW("TIMEOUT","%s",log);
-        *t=0;
-        return true;
-    }
-    return false;
-}
-
-void light_sleep_init()
-{
-    gpio_wakeup_enable(PIN_BTN,GPIO_INTR_LOW_LEVEL);
-    gpio_wakeup_enable(PIN_INTB,GPIO_INTR_HIGH_LEVEL);
-    esp_sleep_enable_timer_wakeup(SLEEP_TIME);
-    esp_sleep_enable_gpio_wakeup();
-   
-}
-void pin_init()
-{
-    gpio_config_t io_cfg = {};
-    io_cfg.pin_bit_mask = BIT(PIN_SIGNAL);
-    io_cfg.mode = GPIO_MODE_OUTPUT;
-    gpio_config(&io_cfg);
-    
-    io_cfg.pin_bit_mask = BIT(PIN_BTN);
-    io_cfg.pull_up_en = GPIO_PULLUP_ENABLE;
-    io_cfg.mode = GPIO_MODE_INPUT;
-    gpio_config(&io_cfg);
-
-    io_cfg.pin_bit_mask = BIT(PIN_INTB);
-    io_cfg.mode = GPIO_MODE_INPUT;
-    gpio_config(&io_cfg);
-}
-
-void read_battery(void* pvParameter)
-{
-#define NUM_OF_SAMPLES 25
-    EventBits_t xEvtBVal;
-    for(;;){
-        int adc_raw=0;
-        unsigned int voltage = 0;
-        uint8_t bat_percent=0;
-        xEvtBVal = xEventGroupWaitBits(xEvtGr1,EVTGR_TASK_BATTERY,pdTRUE,pdFALSE,portMAX_DELAY);
-        if(ASSERT_BITS(xEvtBVal,EVTGR_TASK_BATTERY)){
-            for(uint8_t i=0;i<NUM_OF_SAMPLES;i++){
-                adc_raw += adc1_get_raw(ADC1_CHANNEL_4);
-            }
-            voltage = esp_adc_cal_raw_to_voltage(adc_raw/NUM_OF_SAMPLES,&adc1_chars);
-            bat_percent = (((float)voltage*2 - BAT_MIN_VOLT)/(BAT_MAX_VOLT-BAT_MIN_VOLT))*100;
-            ESP_LOGI("BatPercent", "%u%%", bat_percent);
-        }
-    }
-}
-
-void ADC1_init()
-{
-    esp_err_t ret;
-    ret = esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP);
-    if (ret == ESP_ERR_NOT_SUPPORTED) {
-        ESP_LOGW(TAG, "Calibration scheme not supported, skip software calibration");
-    } else if (ret == ESP_ERR_INVALID_VERSION) {
-        ESP_LOGW(TAG, "eFuse not burnt, skip software calibration");
-    } else if (ret == ESP_OK) {
-        esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_DEFAULT, 0, &adc1_chars);
-    } else {
-        ESP_LOGE(TAG, "Invalid arg");
-    }
-    ESP_ERROR_CHECK(adc1_config_width(ADC_WIDTH_BIT_DEFAULT));
-    ESP_ERROR_CHECK(adc1_config_channel_atten(ADC1_CHANNEL_4, ADC_ATTEN_DB_11));
-}
-
-
-
-
-
-
 
 
 

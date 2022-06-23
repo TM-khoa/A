@@ -210,7 +210,7 @@ static const esp_gatts_attr_db_t gatt_database_BAT[BATTotalIdx] =
     },
 
     /* Battery Characteristic Declaration */
-    [BATLevelIdx]     =
+    [BATCharLevelIdx]     =
     {
         {ESP_GATT_AUTO_RSP}, 
         {
@@ -224,7 +224,7 @@ static const esp_gatts_attr_db_t gatt_database_BAT[BATTotalIdx] =
     },
 
     /* Battery Characteristic Battery level value */
-    [BATLevelValIdx] =
+    [BATCharLevelValIdx] =
     {
         {ESP_GATT_AUTO_RSP}, 
         {
@@ -398,26 +398,12 @@ static void gatts_profile_HR_event_handler(esp_gatts_cb_event_t event, esp_gatt_
                         ind_nof_HR.mode = BLE_NOTIFY_EN;
                         ind_nof_HR.attr_handle = heart_rate_handle_table[HRCharMeasureValIdx];
                         ind_nof_HR.need_confirm = false;
-                        //the size of notify_data[] need less than MTU size
-                        // esp_ble_gatts_send_indicate(gatts_if, 
-                        //                             param->write.conn_id, 
-                        //                             heart_rate_handle_table[HRCharMeasureValIdx],
-                        //                             sizeof(notify_data), 
-                        //                             notify_data, 
-                        //                             false);
                     }else if (descr_value == 0x0002){
                         ESP_LOGI(GATTS_TAG, "indicate enable");
                         ind_nof_HR.gatt_if = gatts_if;
                         ind_nof_HR.mode = BLE_NOTIFY_EN;
                         ind_nof_HR.attr_handle = heart_rate_handle_table[HRCharMeasureValIdx];
                         ind_nof_HR.need_confirm = true;
-                        //the size of indicate_data[] need less than MTU size
-                        // esp_ble_gatts_send_indicate(gatts_if, 
-                        //                             param->write.conn_id, 
-                        //                             heart_rate_handle_table[HRCharMeasureValIdx],
-                        //                             sizeof(indicate_data), 
-                        //                             indicate_data, 
-                        //                             true);
                     }
                     else if (descr_value == 0x0000){
                         ESP_LOGI(GATTS_TAG, "notify/indicate disable ");
@@ -510,6 +496,7 @@ static void gatts_profile_BAT_event_handler(esp_gatts_cb_event_t event, esp_gatt
             }
             break;
         }
+        
         case ESP_GATTS_CREAT_ATTR_TAB_EVT:{
             if (param->add_attr_tab.status != ESP_GATT_OK){
                 ESP_LOGE(GATTS_TAG, "create attribute table failed, error code=0x%x", param->add_attr_tab.status);
@@ -540,35 +527,21 @@ static void gatts_profile_BAT_event_handler(esp_gatts_cb_event_t event, esp_gatt
                     uint16_t descr_value = param->write.value[1]<<8 | param->write.value[0];
                     if (descr_value == 0x0001){
                         ESP_LOGI(GATTS_TAG, "notify enable");
-                        uint8_t notify_data[15];
-                        for (int i = 0; i < sizeof(notify_data); ++i)
-                        {
-                            notify_data[i] = i % 0xff;
-                        }
-                        //the size of notify_data[] need less than MTU size
-                        esp_ble_gatts_send_indicate(gatts_if, 
-                                                    param->write.conn_id, 
-                                                    battery_handle_table[BATLevelValIdx],
-                                                    sizeof(notify_data), 
-                                                    notify_data, 
-                                                    false);
+                        ind_nof_BAT.gatt_if = gatts_if;
+                        ind_nof_BAT.mode = BLE_NOTIFY_EN;
+                        ind_nof_BAT.attr_handle = battery_handle_table[BATCharLevelValIdx];
+                        ind_nof_BAT.need_confirm = false;
                     }else if (descr_value == 0x0002){
                         ESP_LOGI(GATTS_TAG, "indicate enable");
-                        uint8_t indicate_data[15];
-                        for (int i = 0; i < sizeof(indicate_data); ++i)
-                        {
-                            indicate_data[i] = i % 0xff;
-                        }
-                        //the size of indicate_data[] need less than MTU size
-                        esp_ble_gatts_send_indicate(gatts_if, 
-                                                    param->write.conn_id, 
-                                                    battery_handle_table[BATLevelValIdx],
-                                                    sizeof(indicate_data), 
-                                                    indicate_data, 
-                                                    true);
+                        ind_nof_BAT.gatt_if = gatts_if;
+                        ind_nof_BAT.mode = BLE_NOTIFY_EN;
+                        ind_nof_BAT.attr_handle = battery_handle_table[BATCharLevelValIdx];
+                        ind_nof_BAT.need_confirm = true;
+                        
                     }
                     else if (descr_value == 0x0000){
                         ESP_LOGI(GATTS_TAG, "notify/indicate disable ");
+                        ind_nof_BAT.mode = BLE_NOTIFY_INDICATE_DISABLE;
                     }else{
                         ESP_LOGE(GATTS_TAG, "unknown descr value");
                         esp_log_buffer_hex(GATTS_TAG, param->write.value, param->write.len);
@@ -585,12 +558,54 @@ static void gatts_profile_BAT_event_handler(esp_gatts_cb_event_t event, esp_gatt
             }
             break;
         }
+        
+        case ESP_GATTS_MTU_EVT:{
+            ESP_LOGI(GATTS_TAG, "ESP_GATTS_MTU_EVT, MTU %d", param->mtu.mtu);
+            break;
+        }
+
+        case ESP_GATTS_READ_EVT:{
+            ESP_LOGI(GATTS_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d\n", param->read.conn_id, param->read.trans_id, param->read.handle);
+            break;
+        }
+
         case ESP_GATTS_EXEC_WRITE_EVT:{
             ESP_LOGI(GATTS_TAG, "ESP_GATTS_EXEC_WRITE_EVT");
             exec_write_event_env(&BAT_prepare_write_env, param);
             break;
         }
         
+        case ESP_GATTS_CONNECT_EVT:{
+            ESP_LOGI(GATTS_TAG, "ESP_GATTS_CONNECT_EVT, conn_id = %d", param->connect.conn_id);
+            esp_log_buffer_hex(GATTS_TAG, param->connect.remote_bda, 6);
+            esp_ble_conn_update_params_t conn_params = {0};
+            memcpy(conn_params.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
+            /* For the iOS system, please refer to Apple official documents about the BLE connection parameters restrictions. */
+            conn_params.latency = 0;
+            conn_params.max_int = 0x20;    // max_int = 0x20*1.25ms = 40ms
+            conn_params.min_int = 0x10;    // min_int = 0x10*1.25ms = 20ms
+            conn_params.timeout = 400;    // timeout = 400*10ms = 4000ms
+            //start sent the update connection parameters to the peer device.
+            esp_ble_gap_update_conn_params(&conn_params);
+            BSCO.isConnected = true;
+            break;
+         }
+        
+        case ESP_GATTS_DISCONNECT_EVT:{
+            ESP_LOGI(GATTS_TAG, "ESP_GATTS_DISCONNECT_EVT, disconnect reason 0x%x", param->disconnect.reason);
+            esp_ble_gap_start_advertising(&adv_params);
+            ind_nof_BAT.mode = BLE_NOTIFY_INDICATE_DISABLE;
+            BSCO.isConnected = false;
+            break;
+        }
+        
+        case ESP_GATTS_CONF_EVT:{
+            ESP_LOGI(GATTS_TAG, "ESP_GATTS_CONF_EVT, status %d attr_handle %d", param->conf.status, param->conf.handle);
+            if (param->conf.status != ESP_GATT_OK){
+                esp_log_buffer_hex(GATTS_TAG, param->conf.value, param->conf.len);
+            }
+            break;
+        }
     default:
         break;
     }
@@ -678,6 +693,39 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
     }
 }
 
+void BLE_create_service()
+{
+    esp_err_t ret;
+    ret = esp_ble_gap_register_callback(gap_event_handler);
+    if (ret){
+        ESP_LOGE(BLE_TAG, "gap register error, error code = %x", ret);
+        return;
+    }
+
+    ret = esp_ble_gatts_register_callback(gatts_event_handler);
+    if (ret){
+        ESP_LOGE(BLE_TAG, "gatts register error, error code = %x", ret);
+        return;
+    }
+
+    ret = esp_ble_gatts_app_register(PROFILE_HR_APP_ID);
+    if (ret){
+        ESP_LOGE(GATTS_TAG, "gatts HR register error, error code = %x", ret);
+        return;
+    }
+
+    ret = esp_ble_gatts_app_register(PROFILE_BAT_APP_ID);
+    if (ret){
+        ESP_LOGE(GATTS_TAG, "gatts BAT register error, error code = %x", ret);
+        return;
+    }
+    
+    esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
+    if (local_mtu_ret){
+        ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
+    }
+}
+
 void BLE_init() 
 {
     esp_err_t ret;
@@ -717,41 +765,15 @@ void BLE_init()
         return;
     }
 
-    ret = esp_ble_gap_register_callback(gap_event_handler);
-    if (ret){
-        ESP_LOGE(BLE_TAG, "gap register error, error code = %x", ret);
-        return;
-    }
-
-    ret = esp_ble_gatts_register_callback(gatts_event_handler);
-    if (ret){
-        ESP_LOGE(BLE_TAG, "gatts register error, error code = %x", ret);
-        return;
-    }
-
-    ret = esp_ble_gatts_app_register(PROFILE_HR_APP_ID);
-    if (ret){
-        ESP_LOGE(GATTS_TAG, "gatts HR register error, error code = %x", ret);
-        return;
-    }
-
-    ret = esp_ble_gatts_app_register(PROFILE_BAT_APP_ID);
-    if (ret){
-        ESP_LOGE(GATTS_TAG, "gatts BAT register error, error code = %x", ret);
-        return;
-    }
+    BLE_create_service();
     
-    esp_err_t local_mtu_ret = esp_ble_gatt_set_local_mtu(500);
-    if (local_mtu_ret){
-        ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
-    }
 
     BSCO.isBLEEnable = true;
 }
 
 
 
-void BLE_enable()
+esp_err_t BLE_enable()
 {
     esp_err_t ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if (ret) {
@@ -763,19 +785,25 @@ void BLE_enable()
         ESP_LOGE(GATTS_TAG, "%s enable bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
-   
+    BLE_create_service();
+   BSCO.isBLEEnable = true;
+   return ret;
 }
 
-void BLE_disable()
+esp_err_t BLE_disable()
 {
-    esp_err_t ret = esp_bt_controller_disable();
-    if (ret) {
-        ESP_LOGE(GATTS_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
-        return;
-    }
+    esp_err_t ret;
     ret = esp_bluedroid_disable();
     if (ret) {
-        ESP_LOGE(GATTS_TAG, "%s enable bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
+        ESP_LOGE(GATTS_TAG, "%s disable bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
+
+    ret = esp_bt_controller_disable();
+    if (ret) {
+        ESP_LOGE(GATTS_TAG, "%s disable controller failed: %s\n", __func__, esp_err_to_name(ret));
+        return;
+    }
+    BSCO.isBLEEnable = false;
+    return ret;
 }

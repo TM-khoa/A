@@ -36,7 +36,9 @@
         "xtr1common": "c",
         "nvs_flash.h": "c",
         "esp_log.h": "c",
-        "ble.h": "c"
+        "ble.h": "c",
+        "ble_server.h": "c",
+        "gatts_table.h": "c"
     },
     "idf.portWin": "COM7"
 }

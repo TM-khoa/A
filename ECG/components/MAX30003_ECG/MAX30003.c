@@ -207,14 +207,15 @@ esp_err_t MAX30003_read_FIFO_normal(MAX30003_context_t *ctx)
     return ret;
 }
 
-esp_err_t MAX30003_read_RTOR(MAX30003_context_t *ctx, unsigned int *RTOR)
+esp_err_t MAX30003_read_RRHR(MAX30003_context_t *ctx, uint8_t *hr, unsigned int *RR)
 {
     esp_err_t ret = ESP_OK;
-    ret = MAX30003_read(ctx,REG_RTOR_INTERVAL,RTOR);
-    *RTOR = *RTOR >> 10;
-    float hr =  60 /((float)(*RTOR)*0.0078125);
-    unsigned int RR = (unsigned int)(*RTOR)*(7.8125);
-    printf("HR:%.2f, RR:%u \n",hr,RR);
+    unsigned int RTOR;
+    ret = MAX30003_read(ctx,REG_RTOR_INTERVAL,&RTOR);
+    RTOR = RTOR >> 10;
+    *hr =  (uint8_t)(60 /((double)RTOR*0.0078125));
+    *RR = (unsigned int)RTOR*(7.8125);
+    printf("HR:%u, RR:%u \n",hr,RR);
     return ret;
 }
 
