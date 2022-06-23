@@ -333,6 +333,7 @@ void read_battery(void* pvParameter)
         unsigned int voltage = 0;
         uint8_t bat_percent=0;
         xEvtBVal = xEventGroupWaitBits(xEvtGr1,EVTB_TASK_BATTERY,pdTRUE,pdFALSE,portMAX_DELAY);
+        gpio_set_level(PIN_SIGNAL,1);
         if(ASSERT_BITS(xEvtBVal,EVTB_TASK_BATTERY)){
             for(uint8_t i=0;i<NUM_OF_SAMPLES;i++){
                 adc_raw += adc1_get_raw(ADC1_CHANNEL_4);
@@ -343,6 +344,7 @@ void read_battery(void* pvParameter)
             xEventGroupSetBits(xEvtGr1,EVTB_BLE_BAT_SEND_NOTIFY);
             ESP_LOGI("BatPercent", "%u%%", bat_percent);
         }
+        gpio_set_level(PIN_SIGNAL,0);
     }
 }
 

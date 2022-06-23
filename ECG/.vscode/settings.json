@@ -40,5 +40,5 @@
         "ble_server.h": "c",
         "gatts_table.h": "c"
     },
-    "idf.portWin": "COM7"
+    "idf.portWin": "COM13"
 }
